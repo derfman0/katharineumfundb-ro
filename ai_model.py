@@ -1,14 +1,14 @@
 from pathlib import Path
-import traceback
-import sys
+from functools import lru_cache
 
 import numpy as np
 from PIL import Image
+import tensorflow as tf
 
 
-# -------------------------------------------------
-# PROJEKTPFADE
-# -------------------------------------------------
+# --------------------------------------------------
+# DATEIPFADE
+# --------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -16,100 +16,71 @@ MODEL_PATH = BASE_DIR / "keras_model.h5"
 LABELS_PATH = BASE_DIR / "labels.txt"
 
 
-# TensorFlow wird sicher importiert.
-try:
-    import tensorflow as tf
-    TENSORFLOW_AVAILABLE = True
-    TENSORFLOW_ERROR = None
-
-except Exception as error:
-    tf = None
-    TENSORFLOW_AVAILABLE = False
-    TENSORFLOW_ERROR = str(error)
-
-
-# -------------------------------------------------
+# --------------------------------------------------
 # LABELS LADEN
-# -------------------------------------------------
+# --------------------------------------------------
 
+@lru_cache(maxsize=1)
 def load_labels():
     """
-    Liest die Kategorien automatisch aus labels.txt.
-
-    Teachable Machine verwendet beispielsweise:
-
+    Lädt die Kategorien automatisch aus labels.txt.
+    Unterstützt das Teachable-Machine-Format:
     0 Kurzehose
     1 Trinkflasche
-    2 Federtasche
-    3 Hoodie
+    usw.
     """
 
     if not LABELS_PATH.exists():
         raise FileNotFoundError(
-            f"Die Datei labels.txt wurde nicht gefunden: {LABELS_PATH}"
+            f"labels.txt wurde nicht gefunden: {LABELS_PATH}"
         )
-
-    if LABELS_PATH.stat().st_size == 0:
-        raise ValueError("Die Datei labels.txt ist leer.")
 
     labels = []
 
     with open(LABELS_PATH, "r", encoding="utf-8") as file:
-
         for line in file:
-
             line = line.strip()
 
             if not line:
                 continue
 
-            # Teachable-Machine-Format:
-            # "0 Kurzehose"
             parts = line.split(maxsplit=1)
 
+            # Beispiel: "0 Hoodie" → "Hoodie"
             if len(parts) == 2 and parts[0].isdigit():
                 label = parts[1].strip()
             else:
                 label = line
 
-            if label:
-                labels.append(label)
+            labels.append(label)
 
     if not labels:
-        raise ValueError(
-            "Es konnten keine gültigen Kategorien aus labels.txt gelesen werden."
-        )
+        raise ValueError("labels.txt enthält keine Kategorien.")
 
     return labels
 
 
-# -------------------------------------------------
+# --------------------------------------------------
 # MODELL LADEN
-# -------------------------------------------------
+# --------------------------------------------------
 
+@lru_cache(maxsize=1)
 def load_model():
     """
-    Lädt das Teachable-Machine-Keras-Modell.
+    Lädt das Teachable-Machine-Modell nur einmal.
     """
-
-    if not TENSORFLOW_AVAILABLE:
-        raise ImportError(
-            "TensorFlow konnte nicht geladen werden: "
-            f"{TENSORFLOW_ERROR}"
-        )
 
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
-            f"Die Modelldatei wurde nicht gefunden: {MODEL_PATH}"
+            f"keras_model.h5 wurde nicht gefunden: {MODEL_PATH}"
         )
 
     if MODEL_PATH.stat().st_size == 0:
         raise ValueError(
-            "Die Modelldatei keras_model.h5 ist leer."
+            "Die Datei keras_model.h5 ist leer."
         )
 
     try:
-
         model = tf.keras.models.load_model(
             str(MODEL_PATH),
             compile=False
@@ -118,239 +89,119 @@ def load_model():
         return model
 
     except Exception as error:
-
         raise RuntimeError(
-            f"Das Keras-Modell konnte nicht geladen werden: {error}"
+            "Das KI-Modell konnte nicht geladen werden.\n"
+            f"Technischer Fehler: {error}"
         )
 
 
-# -------------------------------------------------
-# KI-STATUS
-# -------------------------------------------------
-
-def get_model_status():
-    """
-    Prüft, ob das Modell und die Labels verfügbar sind.
-
-    Die Funktion gibt technische Details zurück,
-    damit Fehler auf Streamlit Community Cloud
-    besser gefunden werden können.
-    """
-
-    details = {
-        "Python-Version": sys.version,
-        "TensorFlow verfügbar": TENSORFLOW_AVAILABLE,
-        "Modelldatei": str(MODEL_PATH),
-        "Modelldatei vorhanden": MODEL_PATH.exists(),
-        "Labels-Datei": str(LABELS_PATH),
-        "Labels-Datei vorhanden": LABELS_PATH.exists()
-    }
-
-    if TENSORFLOW_AVAILABLE:
-        details["TensorFlow-Version"] = tf.__version__
-
-    if MODEL_PATH.exists():
-        details["Modelldatei Größe"] = (
-            f"{MODEL_PATH.stat().st_size} Bytes"
-        )
-
-    try:
-
-        labels = load_labels()
-
-        details["Anzahl Labels"] = len(labels)
-        details["Labels"] = labels
-
-    except Exception as error:
-
-        return {
-            "available": False,
-            "message": (
-                "Die Labels konnten nicht geladen werden."
-            ),
-            "error": str(error),
-            "details": details
-        }
-
-    try:
-
-        model = load_model()
-
-        details["Modell Eingabe"] = str(model.input_shape)
-        details["Modell Ausgabe"] = str(model.output_shape)
-
-        # Prüfen, ob die Anzahl der Klassen passt
-        output_shape = model.output_shape
-
-        if isinstance(output_shape, list):
-            output_shape = output_shape[0]
-
-        output_classes = output_shape[-1]
-
-        if output_classes != len(labels):
-
-            return {
-                "available": False,
-                "message": (
-                    "Die Anzahl der KI-Kategorien passt "
-                    "nicht zu labels.txt."
-                ),
-                "error": (
-                    f"Modell: {output_classes} Klassen, "
-                    f"Labels: {len(labels)}"
-                ),
-                "details": details
-            }
-
-        return {
-            "available": True,
-            "message": (
-                "Das KI-Modell wurde erfolgreich geladen."
-            ),
-            "error": None,
-            "details": details
-        }
-
-    except Exception as error:
-
-        return {
-            "available": False,
-            "message": (
-                "Das KI-Modell konnte nicht geladen werden."
-            ),
-            "error": str(error),
-            "details": details
-        }
-
-
-# -------------------------------------------------
+# --------------------------------------------------
 # BILD VORBEREITEN
-# -------------------------------------------------
+# --------------------------------------------------
 
 def prepare_image(image):
     """
-    Bereitet ein Bild für das Teachable-Machine-Modell vor.
+    Bereitet ein Bild für Teachable Machine vor.
 
-    Schritte:
-
-    1. RGB
-    2. Größe 224 x 224
-    3. NumPy Array
-    4. float32
-    5. Normalisierung auf -1 bis 1
-    6. Batch-Dimension
+    Das Modell erwartet:
+    - RGB
+    - 224 x 224 Pixel
+    - float32
+    - Normalisierung von -1 bis 1
     """
 
     if not isinstance(image, Image.Image):
         raise TypeError(
-            "Das übergebene Objekt ist kein gültiges Bild."
+            "Das Bild konnte nicht verarbeitet werden."
         )
 
     # RGB
     image = image.convert("RGB")
 
-    # Teachable-Machine-Größe
+    # Größe
     image = image.resize((224, 224))
 
-    # NumPy-Array
+    # NumPy Array
     image_array = np.asarray(
         image,
         dtype=np.float32
     )
 
     # Teachable-Machine-Normalisierung
-    normalized_image = (
+    image_array = (
         image_array / 127.5
     ) - 1
 
     # Batch-Dimension
-    data = np.expand_dims(
-        normalized_image,
+    image_array = np.expand_dims(
+        image_array,
         axis=0
     )
 
-    return data
+    return image_array
 
 
-# -------------------------------------------------
-# BILD ERKENNEN
-# -------------------------------------------------
+# --------------------------------------------------
+# KI-VORHERSAGE
+# --------------------------------------------------
 
 def predict_image(image):
     """
-    Führt eine KI-Vorhersage durch.
+    Analysiert ein Bild.
+
+    Diese Funktion benötigt NUR das Bild:
+
+    result = predict_image(image)
 
     Rückgabe:
-
     {
-        "label": "...",
+        "label": "Hoodie",
         "confidence": 0.95,
-        "probabilities": {
-            ...
-        }
+        "probabilities": {...}
     }
     """
 
-    labels = load_labels()
     model = load_model()
+    labels = load_labels()
 
-    # Bild vorbereiten
     prepared_image = prepare_image(image)
 
-    # Vorhersage
     prediction = model.predict(
         prepared_image,
         verbose=0
     )
 
-    # NumPy Array
     prediction = np.asarray(prediction)
 
     # Batch-Dimension entfernen
     if prediction.ndim == 2:
-
-        if prediction.shape[0] != 1:
-            raise ValueError(
-                "Das Modell hat eine unerwartete "
-                "Batch-Ausgabe geliefert."
-            )
-
         prediction = prediction[0]
 
+    # Überprüfen
     if prediction.ndim != 1:
         raise ValueError(
-            f"Unerwartete Modell-Ausgabe: {prediction.shape}"
+            f"Unerwartete Modellausgabe: {prediction.shape}"
         )
 
-    # Anzahl überprüfen
     if len(prediction) != len(labels):
-
         raise ValueError(
-            f"Anzahl Modellwerte ({len(prediction)}) "
-            f"passt nicht zu Anzahl Labels ({len(labels)})."
+            "Die Anzahl der Modell-Ergebnisse passt "
+            "nicht zu den Kategorien in labels.txt."
         )
 
-    # NaN-Werte überprüfen
-    if np.any(np.isnan(prediction)):
+    # Höchste Wahrscheinlichkeit
+    best_index = int(np.argmax(prediction))
 
-        raise ValueError(
-            "Das KI-Modell hat ungültige NaN-Werte geliefert."
-        )
-
-    # Größte Wahrscheinlichkeit
-    index = int(np.argmax(prediction))
-
-    predicted_label = labels[index]
-    confidence = float(prediction[index])
+    best_label = labels[best_index]
+    confidence = float(prediction[best_index])
 
     probabilities = {}
 
     for label, probability in zip(labels, prediction):
-
         probabilities[label] = float(probability)
 
     return {
-        "label": predicted_label,
+        "label": best_label,
         "confidence": confidence,
         "probabilities": probabilities
     }
