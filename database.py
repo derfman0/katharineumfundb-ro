@@ -2,95 +2,263 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "fundbuero.db"
 
-def _connect():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+BASE_DIR = Path(__file__).resolve().parent
+DATABASE_PATH = BASE_DIR / "fundbuero.db"
+
+
+def get_connection():
+    """Erstellt eine Verbindung zur SQLite-Datenbank."""
+
+    connection = sqlite3.connect(
+        str(DATABASE_PATH)
+    )
+
+    connection.row_factory = sqlite3.Row
+
+    return connection
+
 
 def init_database():
-    with _connect() as con:
-        con.execute("""
+    """Erstellt die Datenbank und Tabelle automatisch."""
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS fundstuecke (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kategorie TEXT NOT NULL,
             farbe TEXT,
             groesse TEXT,
             fundort TEXT,
-            funddatum TEXT NOT NULL,
+            funddatum TEXT,
             beschreibung TEXT,
             bildpfad TEXT,
             ki_konfidenz REAL,
-            status TEXT NOT NULL DEFAULT 'Verfügbar',
-            erstellt_am TEXT NOT NULL
-        )""")
+            status TEXT DEFAULT 'Verfügbar',
+            erstellt_am TEXT
+        )
+    """)
 
-def save_item(kategorie, farbe, groesse, fundort, funddatum,
-              beschreibung, bildpfad, ki_konfidenz, status="Verfügbar"):
-    with _connect() as con:
-        cur = con.execute("""
-        INSERT INTO fundstuecke
-        (kategorie, farbe, groesse, fundort, funddatum, beschreibung,
-         bildpfad, ki_konfidenz, status, erstellt_am)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (kategorie, farbe, groesse, fundort, str(funddatum), beschreibung,
-         bildpfad, float(ki_konfidenz), status,
-         datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        return cur.lastrowid
+    connection.commit()
+    connection.close()
+
+
+def save_item(
+    kategorie,
+    farbe,
+    groesse,
+    fundort,
+    funddatum,
+    beschreibung,
+    bildpfad,
+    ki_konfidenz
+):
+    """Speichert ein Fundstück."""
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        INSERT INTO fundstuecke (
+            kategorie,
+            farbe,
+            groesse,
+            fundort,
+            funddatum,
+            beschreibung,
+            bildpfad,
+            ki_konfidenz,
+            status,
+            erstellt_am
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        kategorie,
+        farbe,
+        groesse,
+        fundort,
+        funddatum,
+        beschreibung,
+        bildpfad,
+        ki_konfidenz,
+        "Verfügbar",
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
+
+    connection.commit()
+    connection.close()
+
 
 def get_all_items():
-    with _connect() as con:
-        rows = con.execute("SELECT * FROM fundstuecke ORDER BY id DESC").fetchall()
-    return [dict(row) for row in rows]
+    """Gibt alle Fundstücke zurück."""
 
-def search_items(kategorie=None, farbe=None, fundort=None,
-                 funddatum=None, freitext=None, status=None):
+    connection = get_connection()
+
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT *
+        FROM fundstuecke
+        ORDER BY id DESC
+    """)
+
+    items = cursor.fetchall()
+
+    connection.close()
+
+    return items
+
+
+def search_items(
+    kategorie=None,
+    farbe=None,
+    fundort=None,
+    status=None,
+    suchtext=None
+):
+    """Sucht nach Fundstücken."""
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
     query = "SELECT * FROM fundstuecke WHERE 1=1"
-    params = []
+    parameters = []
+
     if kategorie and kategorie != "Alle":
-        query += " AND kategorie = ?"; params.append(kategorie)
+        query += " AND kategorie = ?"
+        parameters.append(kategorie)
+
     if farbe:
-        query += " AND LOWER(farbe) LIKE ?"; params.append(f"%{farbe.lower()}%")
+        query += " AND LOWER(farbe) LIKE LOWER(?)"
+        parameters.append(f"%{farbe}%")
+
     if fundort and fundort != "Alle":
-        query += " AND fundort = ?"; params.append(fundort)
-    if funddatum:
-        query += " AND funddatum = ?"; params.append(str(funddatum))
-    if freitext:
-        value = f"%{freitext.lower()}%"
-        query += " AND (LOWER(kategorie) LIKE ? OR LOWER(farbe) LIKE ? OR LOWER(fundort) LIKE ? OR LOWER(beschreibung) LIKE ?)"
-        params.extend([value, value, value, value])
+        query += " AND fundort = ?"
+        parameters.append(fundort)
+
     if status and status != "Alle":
-        query += " AND status = ?"; params.append(status)
+        query += " AND status = ?"
+        parameters.append(status)
+
+    if suchtext:
+        query += """
+            AND (
+                LOWER(kategorie) LIKE LOWER(?)
+                OR LOWER(farbe) LIKE LOWER(?)
+                OR LOWER(beschreibung) LIKE LOWER(?)
+                OR LOWER(fundort) LIKE LOWER(?)
+            )
+        """
+
+        text = f"%{suchtext}%"
+
+        parameters.extend([
+            text,
+            text,
+            text,
+            text
+        ])
+
     query += " ORDER BY id DESC"
-    with _connect() as con:
-        rows = con.execute(query, params).fetchall()
-    return [dict(row) for row in rows]
+
+    cursor.execute(
+        query,
+        parameters
+    )
+
+    results = cursor.fetchall()
+
+    connection.close()
+
+    return results
+
 
 def update_item_status(item_id, status):
-    if status not in ("Verfügbar", "Abgeholt"):
-        raise ValueError("Ungültiger Status")
-    with _connect() as con:
-        con.execute("UPDATE fundstuecke SET status = ? WHERE id = ?",
-                    (status, int(item_id)))
+    """Ändert den Status eines Fundstücks."""
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        UPDATE fundstuecke
+        SET status = ?
+        WHERE id = ?
+    """, (
+        status,
+        item_id
+    ))
+
+    connection.commit()
+    connection.close()
+
 
 def delete_item(item_id):
-    with _connect() as con:
-        row = con.execute("SELECT * FROM fundstuecke WHERE id = ?",
-                          (int(item_id),)).fetchone()
-        if row is None:
-            return None
-        con.execute("DELETE FROM fundstuecke WHERE id = ?", (int(item_id),))
-        return dict(row)
+    """Löscht ein Fundstück."""
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        DELETE FROM fundstuecke
+        WHERE id = ?
+    """, (item_id,))
+
+    connection.commit()
+    connection.close()
+
 
 def get_statistics():
-    with _connect() as con:
-        count = lambda q, p=(): con.execute(q, p).fetchone()[0]
-        return {
-            "gesamt": count("SELECT COUNT(*) FROM fundstuecke"),
-            "verfuegbar": count("SELECT COUNT(*) FROM fundstuecke WHERE status='Verfügbar'"),
-            "abgeholt": count("SELECT COUNT(*) FROM fundstuecke WHERE status='Abgeholt'"),
-            "trinkflaschen": count("SELECT COUNT(*) FROM fundstuecke WHERE kategorie='Trinkflasche'"),
-            "hoodies": count("SELECT COUNT(*) FROM fundstuecke WHERE kategorie='Hoodie'")
-        }
+    """Erstellt einfache Statistiken."""
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM fundstuecke"
+    )
+
+    total = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM fundstuecke
+        WHERE status = 'Verfügbar'
+    """)
+
+    available = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM fundstuecke
+        WHERE status = 'Abgeholt'
+    """)
+
+    collected = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM fundstuecke
+        WHERE kategorie = 'Trinkflasche'
+    """)
+
+    bottles = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM fundstuecke
+        WHERE kategorie = 'Hoodie'
+    """)
+
+    hoodies = cursor.fetchone()[0]
+
+    connection.close()
+
+    return {
+        "total": total,
+        "available": available,
+        "collected": collected,
+        "bottles": bottles,
+        "hoodies": hoodies
+    }
