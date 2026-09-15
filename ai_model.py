@@ -1,207 +1,206 @@
-from pathlib import Path
-from functools import lru_cache
-
-import numpy as np
+import torch
 from PIL import Image
-import tensorflow as tf
+from functools import lru_cache
+from transformers import pipeline
 
 
-# --------------------------------------------------
-# DATEIPFADE
-# --------------------------------------------------
+# ============================================================
+# KATHFUNDBÜRO - KI-KATEGORIEN
+# ============================================================
 
-BASE_DIR = Path(__file__).resolve().parent
+CATEGORIES = [
+    "Trinkflasche",
+    "Brotdose",
+    "Federtasche",
+    "Bleistift",
+    "Kugelschreiber",
+    "Füller",
+    "Textmarker",
+    "Filzstift",
+    "Buntstift",
+    "Radiergummi",
+    "Spitzer",
+    "Lineal",
+    "Geodreieck",
+    "Zirkel",
+    "Schere",
+    "Klebestift",
+    "Notizbuch",
+    "Collegeblock",
+    "Hausaufgabenheft",
+    "Mappe",
+    "Ordner",
+    "Schnellhefter",
+    "Buch",
+    "Schulbuch",
+    "Taschenrechner",
+    "Handy",
+    "Kopfhörer",
+    "Ladekabel",
+    "Powerbank",
+    "USB-Stick",
+    "Schlüssel",
+    "Portemonnaie",
+    "Brille",
+    "Sonnenbrille",
+    "Regenschirm",
+    "Fahrradhelm",
+    "Rucksack",
+    "Sporttasche",
+    "Turnbeutel",
+    "Jacke",
+    "Hoodie",
+    "Pullover",
+    "T-Shirt",
+    "Hose",
+    "Kurze Hose",
+    "Schuhe",
+    "Mütze",
+    "Schal",
+    "Handschuhe",
+    "Sonstiger Gegenstand",
+]
 
-MODEL_PATH = BASE_DIR / "keras_model.h5"
-LABELS_PATH = BASE_DIR / "labels.txt"
+
+# Englische Begriffe helfen CLIP teilweise,
+# weil das Modell stark mit englischen Bild-Text-Beziehungen
+# trainiert wurde.
+CATEGORY_PROMPTS = {
+    "Trinkflasche": "a photo of a water bottle",
+    "Brotdose": "a photo of a lunch box",
+    "Federtasche": "a photo of a pencil case",
+    "Bleistift": "a photo of a pencil",
+    "Kugelschreiber": "a photo of a ballpoint pen",
+    "Füller": "a photo of a fountain pen",
+    "Textmarker": "a photo of a highlighter pen",
+    "Filzstift": "a photo of a felt tip pen",
+    "Buntstift": "a photo of a colored pencil",
+    "Radiergummi": "a photo of an eraser",
+    "Spitzer": "a photo of a pencil sharpener",
+    "Lineal": "a photo of a ruler",
+    "Geodreieck": "a photo of a set square",
+    "Zirkel": "a photo of a compass for drawing",
+    "Schere": "a photo of scissors",
+    "Klebestift": "a photo of a glue stick",
+    "Notizbuch": "a photo of a notebook",
+    "Collegeblock": "a photo of a spiral notebook",
+    "Hausaufgabenheft": "a photo of a school planner",
+    "Mappe": "a photo of a document folder",
+    "Ordner": "a photo of a school binder",
+    "Schnellhefter": "a photo of a plastic school folder",
+    "Buch": "a photo of a book",
+    "Schulbuch": "a photo of a school textbook",
+    "Taschenrechner": "a photo of a calculator",
+    "Handy": "a photo of a smartphone",
+    "Kopfhörer": "a photo of headphones",
+    "Ladekabel": "a photo of a charging cable",
+    "Powerbank": "a photo of a power bank",
+    "USB-Stick": "a photo of a USB flash drive",
+    "Schlüssel": "a photo of keys",
+    "Portemonnaie": "a photo of a wallet",
+    "Brille": "a photo of eyeglasses",
+    "Sonnenbrille": "a photo of sunglasses",
+    "Regenschirm": "a photo of an umbrella",
+    "Fahrradhelm": "a photo of a bicycle helmet",
+    "Rucksack": "a photo of a backpack",
+    "Sporttasche": "a photo of a sports bag",
+    "Turnbeutel": "a photo of a gym drawstring bag",
+    "Jacke": "a photo of a jacket",
+    "Hoodie": "a photo of a hoodie",
+    "Pullover": "a photo of a sweater",
+    "T-Shirt": "a photo of a t-shirt",
+    "Hose": "a photo of trousers",
+    "Kurze Hose": "a photo of shorts",
+    "Schuhe": "a photo of shoes",
+    "Mütze": "a photo of a beanie",
+    "Schal": "a photo of a scarf",
+    "Handschuhe": "a photo of gloves",
+    "Sonstiger Gegenstand": "a photo of another everyday object",
+}
 
 
-# --------------------------------------------------
-# LABELS LADEN
-# --------------------------------------------------
+MODEL_NAME = "openai/clip-vit-base-patch32"
+
 
 @lru_cache(maxsize=1)
-def load_labels():
+def get_classifier():
     """
-    Lädt die Kategorien automatisch aus labels.txt.
-    Unterstützt das Teachable-Machine-Format:
-    0 Kurzehose
-    1 Trinkflasche
-    usw.
+    Lädt das Hugging-Face-Modell nur einmal.
+    Danach wird es im Streamlit-Prozess wiederverwendet.
     """
 
-    if not LABELS_PATH.exists():
-        raise FileNotFoundError(
-            f"labels.txt wurde nicht gefunden: {LABELS_PATH}"
-        )
+    device = 0 if torch.cuda.is_available() else -1
 
-    labels = []
-
-    with open(LABELS_PATH, "r", encoding="utf-8") as file:
-        for line in file:
-            line = line.strip()
-
-            if not line:
-                continue
-
-            parts = line.split(maxsplit=1)
-
-            # Beispiel: "0 Hoodie" → "Hoodie"
-            if len(parts) == 2 and parts[0].isdigit():
-                label = parts[1].strip()
-            else:
-                label = line
-
-            labels.append(label)
-
-    if not labels:
-        raise ValueError("labels.txt enthält keine Kategorien.")
-
-    return labels
-
-
-# --------------------------------------------------
-# MODELL LADEN
-# --------------------------------------------------
-
-@lru_cache(maxsize=1)
-def load_model():
-    """
-    Lädt das Teachable-Machine-Modell nur einmal.
-    """
-
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"keras_model.h5 wurde nicht gefunden: {MODEL_PATH}"
-        )
-
-    if MODEL_PATH.stat().st_size == 0:
-        raise ValueError(
-            "Die Datei keras_model.h5 ist leer."
-        )
-
-    try:
-        model = tf.keras.models.load_model(
-            str(MODEL_PATH),
-            compile=False
-        )
-
-        return model
-
-    except Exception as error:
-        raise RuntimeError(
-            "Das KI-Modell konnte nicht geladen werden.\n"
-            f"Technischer Fehler: {error}"
-        )
-
-
-# --------------------------------------------------
-# BILD VORBEREITEN
-# --------------------------------------------------
-
-def prepare_image(image):
-    """
-    Bereitet ein Bild für Teachable Machine vor.
-
-    Das Modell erwartet:
-    - RGB
-    - 224 x 224 Pixel
-    - float32
-    - Normalisierung von -1 bis 1
-    """
-
-    if not isinstance(image, Image.Image):
-        raise TypeError(
-            "Das Bild konnte nicht verarbeitet werden."
-        )
-
-    # RGB
-    image = image.convert("RGB")
-
-    # Größe
-    image = image.resize((224, 224))
-
-    # NumPy Array
-    image_array = np.asarray(
-        image,
-        dtype=np.float32
+    classifier = pipeline(
+        task="zero-shot-image-classification",
+        model=MODEL_NAME,
+        device=device
     )
 
-    # Teachable-Machine-Normalisierung
-    image_array = (
-        image_array / 127.5
-    ) - 1
-
-    # Batch-Dimension
-    image_array = np.expand_dims(
-        image_array,
-        axis=0
-    )
-
-    return image_array
+    return classifier
 
 
-# --------------------------------------------------
-# KI-VORHERSAGE
-# --------------------------------------------------
-
-def predict_image(image):
+def predict_image(image: Image.Image):
     """
-    Analysiert ein Bild.
-
-    Diese Funktion benötigt NUR das Bild:
-
-    result = predict_image(image)
+    Erkennt einen Gegenstand auf einem Bild.
 
     Rückgabe:
-    {
-        "label": "Hoodie",
-        "confidence": 0.95,
-        "probabilities": {...}
-    }
+        label       = erkannte Kategorie
+        confidence  = Wahrscheinlichkeit
+        results     = Top-Ergebnisse
     """
 
-    model = load_model()
-    labels = load_labels()
+    if image is None:
+        raise ValueError("Kein Bild wurde übergeben.")
 
-    prepared_image = prepare_image(image)
+    if not isinstance(image, Image.Image):
+        image = Image.open(image)
 
-    prediction = model.predict(
-        prepared_image,
-        verbose=0
+    image = image.convert("RGB")
+
+    classifier = get_classifier()
+
+    candidate_labels = [
+        CATEGORY_PROMPTS[category]
+        for category in CATEGORIES
+    ]
+
+    results = classifier(
+        image,
+        candidate_labels=candidate_labels
     )
 
-    prediction = np.asarray(prediction)
-
-    # Batch-Dimension entfernen
-    if prediction.ndim == 2:
-        prediction = prediction[0]
-
-    # Überprüfen
-    if prediction.ndim != 1:
-        raise ValueError(
-            f"Unerwartete Modellausgabe: {prediction.shape}"
-        )
-
-    if len(prediction) != len(labels):
-        raise ValueError(
-            "Die Anzahl der Modell-Ergebnisse passt "
-            "nicht zu den Kategorien in labels.txt."
-        )
-
-    # Höchste Wahrscheinlichkeit
-    best_index = int(np.argmax(prediction))
-
-    best_label = labels[best_index]
-    confidence = float(prediction[best_index])
-
-    probabilities = {}
-
-    for label, probability in zip(labels, prediction):
-        probabilities[label] = float(probability)
-
-    return {
-        "label": best_label,
-        "confidence": confidence,
-        "probabilities": probabilities
+    # Übersetzung Prompt -> deutsche Kategorie
+    prompt_to_category = {
+        prompt: category
+        for category, prompt in CATEGORY_PROMPTS.items()
     }
+
+    converted_results = []
+
+    for result in results:
+        prompt = result["label"]
+
+        category = prompt_to_category.get(
+            prompt,
+            "Sonstiger Gegenstand"
+        )
+
+        converted_results.append({
+            "label": category,
+            "score": float(result["score"])
+        })
+
+    # Höchste Wahrscheinlichkeit zuerst
+    converted_results.sort(
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    best = converted_results[0]
+
+    return (
+        best["label"],
+        best["score"],
+        converted_results[:5]
+    )
