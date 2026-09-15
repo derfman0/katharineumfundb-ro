@@ -3,6 +3,10 @@ from pathlib import Path
 from datetime import datetime
 
 
+# ============================================================
+# DATENBANK
+# ============================================================
+
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "fundbuero.db"
 
@@ -18,6 +22,10 @@ def get_connection():
 
     return connection
 
+
+# ============================================================
+# DATENBANK INITIALISIEREN
+# ============================================================
 
 def init_database():
     """Erstellt die Datenbank und Tabelle automatisch."""
@@ -45,6 +53,10 @@ def init_database():
     connection.close()
 
 
+# ============================================================
+# FUNDSTÜCK SPEICHERN
+# ============================================================
+
 def save_item(
     kategorie,
     farbe,
@@ -55,7 +67,7 @@ def save_item(
     bildpfad,
     ki_konfidenz
 ):
-    """Speichert ein Fundstück."""
+    """Speichert ein neues Fundstück."""
 
     connection = get_connection()
     cursor = connection.cursor()
@@ -91,11 +103,14 @@ def save_item(
     connection.close()
 
 
+# ============================================================
+# ALLE FUNDSTÜCKE
+# ============================================================
+
 def get_all_items():
     """Gibt alle Fundstücke zurück."""
 
     connection = get_connection()
-
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -111,6 +126,10 @@ def get_all_items():
     return items
 
 
+# ============================================================
+# FUNDSTÜCKE SUCHEN
+# ============================================================
+
 def search_items(
     kategorie=None,
     farbe=None,
@@ -123,26 +142,55 @@ def search_items(
     connection = get_connection()
     cursor = connection.cursor()
 
-    query = "SELECT * FROM fundstuecke WHERE 1=1"
+    query = """
+        SELECT *
+        FROM fundstuecke
+        WHERE 1=1
+    """
+
     parameters = []
 
+    # Kategorie
     if kategorie and kategorie != "Alle":
-        query += " AND kategorie = ?"
+
+        query += """
+            AND kategorie = ?
+        """
+
         parameters.append(kategorie)
 
+    # Farbe
     if farbe:
-        query += " AND LOWER(farbe) LIKE LOWER(?)"
-        parameters.append(f"%{farbe}%")
 
+        query += """
+            AND LOWER(farbe) LIKE LOWER(?)
+        """
+
+        parameters.append(
+            f"%{farbe}%"
+        )
+
+    # Fundort
     if fundort and fundort != "Alle":
-        query += " AND fundort = ?"
+
+        query += """
+            AND fundort = ?
+        """
+
         parameters.append(fundort)
 
+    # Status
     if status and status != "Alle":
-        query += " AND status = ?"
+
+        query += """
+            AND status = ?
+        """
+
         parameters.append(status)
 
+    # Freitextsuche
     if suchtext:
+
         query += """
             AND (
                 LOWER(kategorie) LIKE LOWER(?)
@@ -161,7 +209,9 @@ def search_items(
             text
         ])
 
-    query += " ORDER BY id DESC"
+    query += """
+        ORDER BY id DESC
+    """
 
     cursor.execute(
         query,
@@ -174,6 +224,10 @@ def search_items(
 
     return results
 
+
+# ============================================================
+# STATUS ÄNDERN
+# ============================================================
 
 def update_item_status(item_id, status):
     """Ändert den Status eines Fundstücks."""
@@ -194,8 +248,12 @@ def update_item_status(item_id, status):
     connection.close()
 
 
+# ============================================================
+# FUNDSTÜCK LÖSCHEN
+# ============================================================
+
 def delete_item(item_id):
-    """Löscht ein Fundstück."""
+    """Löscht ein Fundstück aus der Datenbank."""
 
     connection = get_connection()
     cursor = connection.cursor()
@@ -209,18 +267,25 @@ def delete_item(item_id):
     connection.close()
 
 
+# ============================================================
+# STATISTIK
+# ============================================================
+
 def get_statistics():
-    """Erstellt einfache Statistiken."""
+    """Erstellt Statistiken für das Fundbüro."""
 
     connection = get_connection()
     cursor = connection.cursor()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM fundstuecke"
-    )
+    # Gesamtzahl
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM fundstuecke
+    """)
 
     total = cursor.fetchone()[0]
 
+    # Noch verfügbar
     cursor.execute("""
         SELECT COUNT(*)
         FROM fundstuecke
@@ -229,6 +294,7 @@ def get_statistics():
 
     available = cursor.fetchone()[0]
 
+    # Abgeholt
     cursor.execute("""
         SELECT COUNT(*)
         FROM fundstuecke
@@ -237,6 +303,7 @@ def get_statistics():
 
     collected = cursor.fetchone()[0]
 
+    # Trinkflaschen
     cursor.execute("""
         SELECT COUNT(*)
         FROM fundstuecke
@@ -245,6 +312,7 @@ def get_statistics():
 
     bottles = cursor.fetchone()[0]
 
+    # Hoodies
     cursor.execute("""
         SELECT COUNT(*)
         FROM fundstuecke
