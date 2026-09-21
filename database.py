@@ -1,3 +1,4 @@
+```python
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -12,7 +13,7 @@ DATABASE_PATH = BASE_DIR / "fundbuero.db"
 
 
 def get_connection():
-    """Stellt eine Verbindung zur SQLite-Datenbank her."""
+    """Erstellt eine Verbindung zur SQLite-Datenbank."""
 
     connection = sqlite3.connect(str(DATABASE_PATH))
     connection.row_factory = sqlite3.Row
@@ -25,7 +26,7 @@ def get_connection():
 # ============================================================
 
 def init_database():
-    """Erstellt die Datenbank und Tabelle, falls sie noch nicht existieren."""
+    """Erstellt die Datenbank und Tabelle automatisch."""
 
     connection = get_connection()
 
@@ -37,12 +38,12 @@ def init_database():
             CREATE TABLE IF NOT EXISTS fundstuecke (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 kategorie TEXT NOT NULL,
-                farbe TEXT DEFAULT '',
-                groesse TEXT DEFAULT '',
-                fundort TEXT DEFAULT '',
-                funddatum TEXT DEFAULT '',
-                beschreibung TEXT DEFAULT '',
-                bildpfad TEXT DEFAULT '',
+                farbe TEXT,
+                groesse TEXT,
+                fundort TEXT,
+                funddatum TEXT,
+                beschreibung TEXT,
+                bildpfad TEXT,
                 ki_konfidenz REAL DEFAULT 0,
                 status TEXT DEFAULT 'Verfügbar',
                 erstellt_am TEXT
@@ -95,12 +96,12 @@ def save_item(
             """,
             (
                 kategorie,
-                farbe or "",
-                groesse or "",
-                fundort or "",
-                funddatum or "",
-                beschreibung or "",
-                bildpfad or "",
+                farbe,
+                groesse,
+                fundort,
+                funddatum,
+                beschreibung,
+                bildpfad,
                 float(ki_konfidenz or 0),
                 "Verfügbar",
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -108,8 +109,6 @@ def save_item(
         )
 
         connection.commit()
-
-        return cursor.lastrowid
 
     finally:
         connection.close()
@@ -135,7 +134,7 @@ def get_all_items():
             """
         )
 
-        return [dict(row) for row in cursor.fetchall()]
+        return cursor.fetchall()
 
     finally:
         connection.close()
@@ -152,7 +151,7 @@ def search_items(
     status=None,
     suchtext=None,
 ):
-    """Sucht nach Fundstücken anhand verschiedener Filter."""
+    """Sucht nach Fundstücken."""
 
     connection = get_connection()
 
@@ -162,7 +161,7 @@ def search_items(
         query = """
             SELECT *
             FROM fundstuecke
-            WHERE 1 = 1
+            WHERE 1=1
         """
 
         parameters = []
@@ -175,7 +174,6 @@ def search_items(
             query += """
                 AND kategorie = ?
             """
-
             parameters.append(kategorie)
 
         # ----------------------------------------------------
@@ -186,7 +184,6 @@ def search_items(
             query += """
                 AND LOWER(COALESCE(farbe, '')) LIKE LOWER(?)
             """
-
             parameters.append(f"%{farbe}%")
 
         # ----------------------------------------------------
@@ -197,7 +194,6 @@ def search_items(
             query += """
                 AND fundort = ?
             """
-
             parameters.append(fundort)
 
         # ----------------------------------------------------
@@ -208,11 +204,10 @@ def search_items(
             query += """
                 AND status = ?
             """
-
             parameters.append(status)
 
         # ----------------------------------------------------
-        # Freitext
+        # Freitextsuche
         # ----------------------------------------------------
 
         if suchtext:
@@ -244,7 +239,7 @@ def search_items(
 
         cursor.execute(query, parameters)
 
-        return [dict(row) for row in cursor.fetchall()]
+        return cursor.fetchall()
 
     finally:
         connection.close()
@@ -293,7 +288,7 @@ def update_item_status(item_id, status):
 # ============================================================
 
 def delete_item(item_id):
-    """Löscht ein Fundstück."""
+    """Löscht ein Fundstück aus der Datenbank."""
 
     connection = get_connection()
 
@@ -326,7 +321,7 @@ def get_statistics():
     try:
         cursor = connection.cursor()
 
-        # Gesamt
+        # Gesamtzahl
         cursor.execute(
             """
             SELECT COUNT(*)
@@ -390,3 +385,4 @@ def get_statistics():
 
     finally:
         connection.close()
+```
