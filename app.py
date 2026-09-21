@@ -426,17 +426,16 @@ if page == "📷 Fundstück erfassen":
                     )
 
                     # Datenbank
-                    save_item(
-                        kategorie=category,
-                        farbe=color,
-                        groesse=size,
-                        fundort=location,
-                        funddatum=str(found_date),
-                        beschreibung=description,
-                        bildpfad=str(image_path),
-                        ki_konfidenz=float(ai_confidence),
-                        status="Gefunden",
-                    )
+                   save_item(
+    kategorie=category,
+    farbe=color,
+    groesse=size,
+    fundort=location,
+    funddatum=str(found_date),
+    beschreibung=description,
+    bildpfad=str(image_path),
+    ki_konfidenz=float(ai_confidence),
+)
 
                     st.success(
                         "✅ Das Fundstück wurde erfolgreich gespeichert!"
