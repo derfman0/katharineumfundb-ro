@@ -1,3 +1,4 @@
+```python
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -10,13 +11,25 @@ from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "fundbuero.db"
 
+# Erlaubte Statuswerte.
+# Dadurch können keine versehentlichen oder ungültigen
+# Statuswerte in der Datenbank gespeichert werden.
+STATUS_OPTIONEN = {
+    "Verfügbar",
+    "Abgeholt",
+}
+
 
 def get_connection():
-    """Erstellt eine Verbindung zur SQLite-Datenbank."""
+    """
+    Erstellt eine Verbindung zur SQLite-Datenbank.
 
-    connection = sqlite3.connect(
-        str(DATABASE_PATH)
-    )
+    Die Row Factory sorgt dafür, dass Datensätze sowohl
+    über Spaltennamen als auch über Indexe angesprochen
+    werden können.
+    """
+
+    connection = sqlite3.connect(str(DATABASE_PATH))
 
     connection.row_factory = sqlite3.Row
 
@@ -28,29 +41,38 @@ def get_connection():
 # ============================================================
 
 def init_database():
-    """Erstellt die Datenbank und Tabelle automatisch."""
+    """
+    Erstellt die Datenbank und die Tabelle automatisch,
+    falls sie noch nicht existieren.
+    """
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS fundstuecke (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kategorie TEXT NOT NULL,
-            farbe TEXT,
-            groesse TEXT,
-            fundort TEXT,
-            funddatum TEXT,
-            beschreibung TEXT,
-            bildpfad TEXT,
-            ki_konfidenz REAL,
-            status TEXT DEFAULT 'Verfügbar',
-            erstellt_am TEXT
+    try:
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fundstuecke (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kategorie TEXT NOT NULL,
+                farbe TEXT,
+                groesse TEXT,
+                fundort TEXT,
+                funddatum TEXT,
+                beschreibung TEXT,
+                bildpfad TEXT,
+                ki_konfidenz REAL,
+                status TEXT DEFAULT 'Verfügbar',
+                erstellt_am TEXT
+            )
+            """
         )
-    """)
 
-    connection.commit()
-    connection.close()
+        connection.commit()
+
+    finally:
+        connection.close()
 
 
 # ============================================================
@@ -65,42 +87,75 @@ def save_item(
     funddatum,
     beschreibung,
     bildpfad,
-    ki_konfidenz
+    ki_konfidenz,
 ):
-    """Speichert ein neues Fundstück."""
+    """
+    Speichert ein neues Fundstück.
+
+    Neue Fundstücke werden immer automatisch als
+    'Verfügbar' gespeichert.
+    """
+
+    if not kategorie:
+        raise ValueError("Die Kategorie darf nicht leer sein.")
+
+    # Leere Texte einheitlich als None speichern.
+    farbe = farbe.strip() if farbe else None
+    groesse = groesse.strip() if groesse else None
+    fundort = fundort.strip() if fundort else None
+    beschreibung = beschreibung.strip() if beschreibung else None
+    bildpfad = str(bildpfad) if bildpfad else None
+
+    # KI-Konfidenz sauber in einen Float umwandeln.
+    try:
+        ki_konfidenz = float(ki_konfidenz or 0.0)
+    except (TypeError, ValueError):
+        ki_konfidenz = 0.0
+
+    # Konfidenz auf den gültigen Bereich 0.0–1.0 begrenzen.
+    ki_konfidenz = max(0.0, min(1.0, ki_konfidenz))
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        INSERT INTO fundstuecke (
-            kategorie,
-            farbe,
-            groesse,
-            fundort,
-            funddatum,
-            beschreibung,
-            bildpfad,
-            ki_konfidenz,
-            status,
-            erstellt_am
+    try:
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO fundstuecke (
+                kategorie,
+                farbe,
+                groesse,
+                fundort,
+                funddatum,
+                beschreibung,
+                bildpfad,
+                ki_konfidenz,
+                status,
+                erstellt_am
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                kategorie.strip(),
+                farbe,
+                groesse,
+                fundort,
+                funddatum,
+                beschreibung,
+                bildpfad,
+                ki_konfidenz,
+                "Verfügbar",
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        kategorie,
-        farbe,
-        groesse,
-        fundort,
-        funddatum,
-        beschreibung,
-        bildpfad,
-        ki_konfidenz,
-        "Verfügbar",
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ))
 
-    connection.commit()
-    connection.close()
+        connection.commit()
+
+        return cursor.lastrowid
+
+    finally:
+        connection.close()
 
 
 # ============================================================
@@ -108,22 +163,61 @@ def save_item(
 # ============================================================
 
 def get_all_items():
-    """Gibt alle Fundstücke zurück."""
+    """
+    Gibt alle Fundstücke zurück.
+
+    Neueste Fundstücke stehen zuerst.
+    """
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        SELECT *
-        FROM fundstuecke
-        ORDER BY id DESC
-    """)
+    try:
+        cursor = connection.cursor()
 
-    items = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT *
+            FROM fundstuecke
+            ORDER BY id DESC
+            """
+        )
 
-    connection.close()
+        return cursor.fetchall()
 
-    return items
+    finally:
+        connection.close()
+
+
+# ============================================================
+# EIN FUNDSTÜCK ABRUFEN
+# ============================================================
+
+def get_item(item_id):
+    """
+    Gibt ein einzelnes Fundstück anhand seiner ID zurück.
+
+    Wenn kein passendes Fundstück existiert, wird None
+    zurückgegeben.
+    """
+
+    connection = get_connection()
+
+    try:
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM fundstuecke
+            WHERE id = ?
+            """,
+            (item_id,),
+        )
+
+        return cursor.fetchone()
+
+    finally:
+        connection.close()
 
 
 # ============================================================
@@ -135,94 +229,131 @@ def search_items(
     farbe=None,
     fundort=None,
     status=None,
-    suchtext=None
+    suchtext=None,
 ):
-    """Sucht nach Fundstücken."""
+    """
+    Sucht nach Fundstücken.
+
+    Unterstützte Filter:
+    - Kategorie
+    - Farbe
+    - Fundort
+    - Status
+    - Freitext
+
+    Die Freitextsuche durchsucht:
+    - Kategorie
+    - Farbe
+    - Größe
+    - Beschreibung
+    - Fundort
+    """
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    query = """
-        SELECT *
-        FROM fundstuecke
-        WHERE 1=1
-    """
+    try:
+        cursor = connection.cursor()
 
-    parameters = []
-
-    # Kategorie
-    if kategorie and kategorie != "Alle":
-
-        query += """
-            AND kategorie = ?
+        query = """
+            SELECT *
+            FROM fundstuecke
+            WHERE 1=1
         """
 
-        parameters.append(kategorie)
+        parameters = []
 
-    # Farbe
-    if farbe:
+        # ----------------------------------------------------
+        # Kategorie
+        # ----------------------------------------------------
 
-        query += """
-            AND LOWER(farbe) LIKE LOWER(?)
-        """
+        if kategorie and kategorie != "Alle":
+            query += """
+                AND kategorie = ?
+            """
 
-        parameters.append(
-            f"%{farbe}%"
-        )
+            parameters.append(kategorie)
 
-    # Fundort
-    if fundort and fundort != "Alle":
+        # ----------------------------------------------------
+        # Farbe
+        # ----------------------------------------------------
 
-        query += """
-            AND fundort = ?
-        """
+        if farbe:
+            query += """
+                AND LOWER(COALESCE(farbe, '')) LIKE LOWER(?)
+            """
 
-        parameters.append(fundort)
+            parameters.append(f"%{farbe.strip()}%")
 
-    # Status
-    if status and status != "Alle":
+        # ----------------------------------------------------
+        # Fundort
+        # ----------------------------------------------------
 
-        query += """
-            AND status = ?
-        """
+        if fundort and fundort != "Alle":
+            query += """
+                AND fundort = ?
+            """
 
-        parameters.append(status)
+            parameters.append(fundort)
 
-    # Freitextsuche
-    if suchtext:
+        # ----------------------------------------------------
+        # Status
+        # ----------------------------------------------------
 
-        query += """
-            AND (
-                LOWER(kategorie) LIKE LOWER(?)
-                OR LOWER(farbe) LIKE LOWER(?)
-                OR LOWER(beschreibung) LIKE LOWER(?)
-                OR LOWER(fundort) LIKE LOWER(?)
+        if status and status != "Alle":
+
+            if status not in STATUS_OPTIONEN:
+                raise ValueError(
+                    f"Ungültiger Status: {status}"
+                )
+
+            query += """
+                AND status = ?
+            """
+
+            parameters.append(status)
+
+        # ----------------------------------------------------
+        # Freitext
+        # ----------------------------------------------------
+
+        if suchtext and suchtext.strip():
+
+            text = f"%{suchtext.strip()}%"
+
+            query += """
+                AND (
+                    LOWER(COALESCE(kategorie, '')) LIKE LOWER(?)
+                    OR LOWER(COALESCE(farbe, '')) LIKE LOWER(?)
+                    OR LOWER(COALESCE(groesse, '')) LIKE LOWER(?)
+                    OR LOWER(COALESCE(beschreibung, '')) LIKE LOWER(?)
+                    OR LOWER(COALESCE(fundort, '')) LIKE LOWER(?)
+                )
+            """
+
+            parameters.extend(
+                [
+                    text,
+                    text,
+                    text,
+                    text,
+                    text,
+                ]
             )
+
+        # ----------------------------------------------------
+        # Sortierung
+        # ----------------------------------------------------
+
+        query += """
+            ORDER BY id DESC
         """
 
-        text = f"%{suchtext}%"
+        cursor.execute(query, parameters)
 
-        parameters.extend([
-            text,
-            text,
-            text,
-            text
-        ])
+        return cursor.fetchall()
 
-    query += """
-        ORDER BY id DESC
-    """
-
-    cursor.execute(
-        query,
-        parameters
-    )
-
-    results = cursor.fetchall()
-
-    connection.close()
-
-    return results
+    finally:
+        connection.close()
 
 
 # ============================================================
@@ -230,22 +361,42 @@ def search_items(
 # ============================================================
 
 def update_item_status(item_id, status):
-    """Ändert den Status eines Fundstücks."""
+    """
+    Ändert den Status eines Fundstücks.
+
+    Erlaubte Werte:
+    - Verfügbar
+    - Abgeholt
+    """
+
+    if status not in STATUS_OPTIONEN:
+        raise ValueError(
+            f"Ungültiger Status: {status}"
+        )
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        UPDATE fundstuecke
-        SET status = ?
-        WHERE id = ?
-    """, (
-        status,
-        item_id
-    ))
+    try:
+        cursor = connection.cursor()
 
-    connection.commit()
-    connection.close()
+        cursor.execute(
+            """
+            UPDATE fundstuecke
+            SET status = ?
+            WHERE id = ?
+            """,
+            (
+                status,
+                item_id,
+            ),
+        )
+
+        connection.commit()
+
+        return cursor.rowcount > 0
+
+    finally:
+        connection.close()
 
 
 # ============================================================
@@ -253,18 +404,32 @@ def update_item_status(item_id, status):
 # ============================================================
 
 def delete_item(item_id):
-    """Löscht ein Fundstück aus der Datenbank."""
+    """
+    Löscht ein Fundstück anhand seiner ID.
+
+    Gibt True zurück, wenn tatsächlich ein Datensatz
+    gelöscht wurde.
+    """
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        DELETE FROM fundstuecke
-        WHERE id = ?
-    """, (item_id,))
+    try:
+        cursor = connection.cursor()
 
-    connection.commit()
-    connection.close()
+        cursor.execute(
+            """
+            DELETE FROM fundstuecke
+            WHERE id = ?
+            """,
+            (item_id,),
+        )
+
+        connection.commit()
+
+        return cursor.rowcount > 0
+
+    finally:
+        connection.close()
 
 
 # ============================================================
@@ -272,61 +437,101 @@ def delete_item(item_id):
 # ============================================================
 
 def get_statistics():
-    """Erstellt Statistiken für das Fundbüro."""
+    """
+    Erstellt Statistiken für das Fundbüro.
+
+    Rückgabe:
+        {
+            "total": ...,
+            "available": ...,
+            "collected": ...,
+            "bottles": ...,
+            "hoodies": ...
+        }
+    """
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    # Gesamtzahl
-    cursor.execute("""
-        SELECT COUNT(*)
-        FROM fundstuecke
-    """)
+    try:
+        cursor = connection.cursor()
 
-    total = cursor.fetchone()[0]
+        # ----------------------------------------------------
+        # Gesamtzahl
+        # ----------------------------------------------------
 
-    # Noch verfügbar
-    cursor.execute("""
-        SELECT COUNT(*)
-        FROM fundstuecke
-        WHERE status = 'Verfügbar'
-    """)
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM fundstuecke
+            """
+        )
 
-    available = cursor.fetchone()[0]
+        total = cursor.fetchone()[0]
 
-    # Abgeholt
-    cursor.execute("""
-        SELECT COUNT(*)
-        FROM fundstuecke
-        WHERE status = 'Abgeholt'
-    """)
+        # ----------------------------------------------------
+        # Verfügbare Fundstücke
+        # ----------------------------------------------------
 
-    collected = cursor.fetchone()[0]
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM fundstuecke
+            WHERE status = 'Verfügbar'
+            """
+        )
 
-    # Trinkflaschen
-    cursor.execute("""
-        SELECT COUNT(*)
-        FROM fundstuecke
-        WHERE kategorie = 'Trinkflasche'
-    """)
+        available = cursor.fetchone()[0]
 
-    bottles = cursor.fetchone()[0]
+        # ----------------------------------------------------
+        # Abgeholte Fundstücke
+        # ----------------------------------------------------
 
-    # Hoodies
-    cursor.execute("""
-        SELECT COUNT(*)
-        FROM fundstuecke
-        WHERE kategorie = 'Hoodie'
-    """)
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM fundstuecke
+            WHERE status = 'Abgeholt'
+            """
+        )
 
-    hoodies = cursor.fetchone()[0]
+        collected = cursor.fetchone()[0]
 
-    connection.close()
+        # ----------------------------------------------------
+        # Trinkflaschen
+        # ----------------------------------------------------
 
-    return {
-        "total": total,
-        "available": available,
-        "collected": collected,
-        "bottles": bottles,
-        "hoodies": hoodies
-    }
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM fundstuecke
+            WHERE kategorie = 'Trinkflasche'
+            """
+        )
+
+        bottles = cursor.fetchone()[0]
+
+        # ----------------------------------------------------
+        # Hoodies
+        # ----------------------------------------------------
+
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM fundstuecke
+            WHERE kategorie = 'Hoodie'
+            """
+        )
+
+        hoodies = cursor.fetchone()[0]
+
+        return {
+            "total": total,
+            "available": available,
+            "collected": collected,
+            "bottles": bottles,
+            "hoodies": hoodies,
+        }
+
+    finally:
+        connection.close()
+```
