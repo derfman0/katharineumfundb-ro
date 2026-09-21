@@ -8,7 +8,6 @@ import html
 from database import (
     init_database,
     save_item,
-    get_all_items,
     search_items,
     update_item_status,
     delete_item,
@@ -19,7 +18,7 @@ from ai_model import predict_image, CATEGORIES
 
 
 # =========================================================
-# GRUNDKONFIGURATION
+# KONFIGURATION
 # =========================================================
 
 st.set_page_config(
@@ -31,10 +30,12 @@ st.set_page_config(
 
 
 # =========================================================
-# VERZEICHNISSE / DATENBANK
+# VERZEICHNISSE
 # =========================================================
 
-UPLOAD_DIR = Path("uploads")
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 init_database()
@@ -43,9 +44,6 @@ init_database()
 # =========================================================
 # KONSTANTEN
 # =========================================================
-# Vorher gab es drei fast identische Fundort-Listen im Code
-# (Erfassen-Formular, Suche-Filter, ...). Jetzt gibt es nur
-# noch eine einzige Quelle der Wahrheit dafür.
 
 FUNDORTE = [
     "Aula",
@@ -60,78 +58,69 @@ FUNDORTE = [
     "Sonstiger Ort",
 ]
 
-# Für Filter (Suche/Verwaltung) macht "Alle" als Option Sinn.
 FUNDORTE_FILTER = ["Alle"] + FUNDORTE
 
-# Beim Erfassen eines Fundstücks ergibt "Alle Bereiche" als
-# Fundort keinen Sinn (ein Gegenstand wurde an genau einem Ort
-# gefunden) - das war vermutlich ein Copy-Paste-Fehler.
-FUNDORTE_ERFASSEN = FUNDORTE
-
-STATUS_OPTIONEN = ["Alle", "Verfügbar", "Abgeholt"]
+STATUS_OPTIONEN = [
+    "Alle",
+    "Verfügbar",
+    "Abgeholt",
+]
 
 
 # =========================================================
 # SESSION STATE
 # =========================================================
 
-DEFAULT_SESSION_STATE = {
+DEFAULT_STATE = {
     "page": "Startseite",
     "uploaded_image": None,
     "image_path": None,
     "ai_result": None,
     "ai_top_results": [],
     "processed_file_id": None,
-    # Wird hochgezählt, um die Upload-Widgets nach dem
-    # Speichern eines Fundstücks zurückzusetzen.
     "form_reset": 0,
 }
 
-for key, default_value in DEFAULT_SESSION_STATE.items():
+for key, value in DEFAULT_STATE.items():
     if key not in st.session_state:
-        st.session_state[key] = default_value
+        st.session_state[key] = value
 
 
 # =========================================================
-# DESIGN / CSS
+# CSS
 # =========================================================
 
 st.markdown(
     """
     <style>
 
-    /* =====================================================
-       GLOBAL
-       ===================================================== */
-
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url(
+        'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'
+    );
 
     :root {
         --red: #c8102e;
         --red-dark: #a50d26;
         --red-light: #fff1f3;
-
         --black: #171717;
         --text: #202124;
         --muted: #6b7280;
-
         --background: #f6f7f8;
         --white: #ffffff;
         --border: #e5e7eb;
-
         --green: #16803c;
         --green-bg: #e9f8ef;
-
         --blue: #2563eb;
         --blue-bg: #edf4ff;
-
-        --radius: 16px;
-        --shadow: 0 8px 30px rgba(20, 20, 20, 0.06);
+        --shadow: 0 8px 30px rgba(20,20,20,0.06);
     }
 
     html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont,
-        'Segoe UI', sans-serif;
+        font-family: 'Inter',
+        -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        sans-serif;
     }
 
     .stApp {
@@ -145,12 +134,7 @@ st.markdown(
         padding-bottom: 4rem;
     }
 
-    /* Streamlit UI reduzieren */
-
-    #MainMenu {
-        visibility: hidden;
-    }
-
+    #MainMenu,
     footer {
         visibility: hidden;
     }
@@ -162,10 +146,6 @@ st.markdown(
     section[data-testid="stSidebar"] {
         display: none;
     }
-
-    /* =====================================================
-       TOP NAVIGATION
-       ===================================================== */
 
     .topbar {
         background: rgba(255,255,255,0.97);
@@ -197,14 +177,12 @@ st.markdown(
         justify-content: center;
         font-weight: 800;
         font-size: 18px;
-        letter-spacing: -1px;
     }
 
     .brand-title {
         font-size: 18px;
         font-weight: 800;
         color: var(--black);
-        line-height: 1.1;
     }
 
     .brand-subtitle {
@@ -213,29 +191,19 @@ st.markdown(
         margin-top: 3px;
     }
 
-    /* =====================================================
-       BUTTONS
-       ===================================================== */
-
     .stButton > button {
         border-radius: 10px !important;
         border: 1px solid var(--border) !important;
         background: white !important;
         color: var(--text) !important;
-        font-family: 'Inter', sans-serif !important;
         font-weight: 600 !important;
         min-height: 42px !important;
-        transition: all 0.15s ease !important;
     }
 
     .stButton > button:hover {
         border-color: var(--red) !important;
         color: var(--red) !important;
-        transform: translateY(-1px);
-        box-shadow: 0 5px 15px rgba(200,16,46,0.08);
     }
-
-    /* Navigation */
 
     .nav-button > button {
         border: none !important;
@@ -261,12 +229,7 @@ st.markdown(
     .primary-button > button:hover {
         background: var(--red-dark) !important;
         color: white !important;
-        border-color: var(--red-dark) !important;
     }
-
-    /* =====================================================
-       PAGE TITLES
-       ===================================================== */
 
     .eyebrow {
         color: var(--red);
@@ -294,58 +257,19 @@ st.markdown(
         margin-bottom: 28px;
     }
 
-    /* =====================================================
-       HERO
-       ===================================================== */
-
     .hero {
         background:
             linear-gradient(
                 100deg,
-                rgba(255,255,255,1) 0%,
+                rgba(255,255,255,1),
                 rgba(255,255,255,0.98) 55%,
-                rgba(255,244,246,1) 100%
+                rgba(255,244,246,1)
             );
-
         border: 1px solid var(--border);
         border-radius: 24px;
         padding: 48px;
         margin-bottom: 24px;
         box-shadow: var(--shadow);
-        position: relative;
-        overflow: hidden;
-    }
-
-    .hero:after {
-        content: "";
-        position: absolute;
-        right: -100px;
-        top: -100px;
-        width: 300px;
-        height: 300px;
-        border-radius: 50%;
-        background: rgba(200,16,46,0.05);
-    }
-
-    .hero-title {
-        font-size: 48px;
-        font-weight: 800;
-        line-height: 1.03;
-        letter-spacing: -2.5px;
-        max-width: 650px;
-        color: var(--black);
-        margin-bottom: 16px;
-        position: relative;
-        z-index: 2;
-    }
-
-    .hero-text {
-        color: var(--muted);
-        font-size: 16px;
-        line-height: 1.7;
-        max-width: 570px;
-        position: relative;
-        z-index: 2;
     }
 
     .hero-accent {
@@ -356,24 +280,36 @@ st.markdown(
         margin-bottom: 20px;
     }
 
-    /* =====================================================
-       ACTION CARDS
-       ===================================================== */
+    .hero-title {
+        font-size: 48px;
+        font-weight: 800;
+        line-height: 1.03;
+        letter-spacing: -2.5px;
+        color: var(--black);
+        margin-bottom: 16px;
+    }
 
-    .action-card {
+    .hero-text {
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.7;
+        max-width: 570px;
+    }
+
+    .action-card,
+    .stat-card,
+    .info-box,
+    .upload-panel,
+    .admin-panel {
         background: white;
         border: 1px solid var(--border);
         border-radius: 18px;
-        padding: 28px;
-        min-height: 245px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.035);
-        transition: all 0.2s ease;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.04);
     }
 
-    .action-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 35px rgba(0,0,0,0.08);
-        border-color: #d9d9d9;
+    .action-card {
+        padding: 28px;
+        min-height: 245px;
     }
 
     .action-icon {
@@ -404,16 +340,8 @@ st.markdown(
         min-height: 60px;
     }
 
-    /* =====================================================
-       STATISTICS
-       ===================================================== */
-
     .stat-card {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 16px;
         padding: 22px;
-        box-shadow: 0 3px 18px rgba(0,0,0,0.035);
     }
 
     .stat-label {
@@ -426,7 +354,6 @@ st.markdown(
     .stat-number {
         font-size: 30px;
         font-weight: 800;
-        letter-spacing: -1px;
         color: var(--black);
     }
 
@@ -436,10 +363,6 @@ st.markdown(
         margin-top: 3px;
     }
 
-    /* =====================================================
-       SECTION
-       ===================================================== */
-
     .section-title {
         font-size: 20px;
         font-weight: 750;
@@ -447,17 +370,6 @@ st.markdown(
         margin-top: 36px;
         margin-bottom: 16px;
     }
-
-    .section-description {
-        color: var(--muted);
-        font-size: 13px;
-        margin-top: -10px;
-        margin-bottom: 18px;
-    }
-
-    /* =====================================================
-       SEARCH
-       ===================================================== */
 
     .search-box {
         background: white;
@@ -468,10 +380,6 @@ st.markdown(
         margin-bottom: 18px;
     }
 
-    /* =====================================================
-       ITEM CARD
-       ===================================================== */
-
     .item-card {
         background: white;
         border: 1px solid var(--border);
@@ -479,12 +387,6 @@ st.markdown(
         overflow: hidden;
         box-shadow: 0 4px 20px rgba(0,0,0,0.04);
         height: 100%;
-        transition: all 0.18s ease;
-    }
-
-    .item-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
     }
 
     .item-image {
@@ -544,16 +446,8 @@ st.markdown(
         color: var(--blue);
     }
 
-    /* =====================================================
-       UPLOAD
-       ===================================================== */
-
     .upload-panel {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 20px;
         padding: 30px;
-        box-shadow: var(--shadow);
     }
 
     .stepper {
@@ -600,10 +494,6 @@ st.markdown(
         flex: 1;
     }
 
-    /* =====================================================
-       AI BOX
-       ===================================================== */
-
     .ai-box {
         border: 1px solid #f1c5cc;
         background: #fff8f9;
@@ -633,32 +523,7 @@ st.markdown(
         margin-top: 5px;
     }
 
-    /* =====================================================
-       ADMIN TABLE
-       ===================================================== */
-
-    .admin-panel {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        padding: 24px;
-        box-shadow: var(--shadow);
-    }
-
-    .table-header {
-        font-size: 18px;
-        font-weight: 750;
-        margin-bottom: 16px;
-    }
-
-    /* =====================================================
-       INFO BOX
-       ===================================================== */
-
     .info-box {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 18px;
         padding: 26px;
         margin-bottom: 16px;
     }
@@ -675,9 +540,10 @@ st.markdown(
         line-height: 1.7;
     }
 
-    /* =====================================================
-       MOBILE
-       ===================================================== */
+    .admin-panel {
+        padding: 24px;
+        margin-bottom: 10px;
+    }
 
     @media (max-width: 800px) {
 
@@ -720,38 +586,39 @@ st.markdown(
 # HILFSFUNKTIONEN
 # =========================================================
 
-def set_page(page_name: str) -> None:
+def set_page(page_name):
     st.session_state.page = page_name
     st.rerun()
 
 
 @st.cache_data(show_spinner=False)
-def image_to_data_uri(path: str):
-    """
-    Wandelt ein lokales Bild in eine Data-URI um, damit es
-    direkt in HTML angezeigt werden kann.
+def image_to_data_uri(path):
+    """Wandelt ein lokales Bild in eine Data-URI um."""
 
-    Wird mit @st.cache_data zwischengespeichert: Fotos ändern
-    sich nach dem Hochladen nicht mehr, daher spart das Caching
-    bei jeder Ansicht der Fundstück-Listen unnötiges erneutes
-    Einlesen und Base64-Kodieren derselben Dateien.
-    """
+    if not path:
+        return None
+
     try:
         file_path = Path(path)
 
         if not file_path.exists():
             return None
 
-        suffix = file_path.suffix.lower()
-
-        mime = {
+        mime_types = {
             ".jpg": "image/jpeg",
             ".jpeg": "image/jpeg",
             ".png": "image/png",
             ".webp": "image/webp",
-        }.get(suffix, "image/jpeg")
+        }
 
-        encoded = base64.b64encode(file_path.read_bytes()).decode("utf-8")
+        mime = mime_types.get(
+            file_path.suffix.lower(),
+            "image/jpeg",
+        )
+
+        encoded = base64.b64encode(
+            file_path.read_bytes()
+        ).decode("utf-8")
 
         return f"data:{mime};base64,{encoded}"
 
@@ -759,7 +626,7 @@ def image_to_data_uri(path: str):
         return None
 
 
-def status_html(status: str) -> str:
+def status_html(status):
     if status == "Verfügbar":
         return """
         <span class="status status-available">
@@ -775,12 +642,6 @@ def status_html(status: str) -> str:
 
 
 def normalize_top_results(results):
-    """
-    Vereinheitlicht mögliche Top-Ergebnisse aus predict_image,
-    damit unterschiedliche Rückgabeformate (Liste von Dicts
-    oder Liste von Tupeln) einheitlich verarbeitet werden können.
-    """
-
     normalized = []
 
     if not results:
@@ -794,32 +655,31 @@ def normalize_top_results(results):
 
         elif isinstance(result, (tuple, list)):
 
-            if len(result) >= 2:
-                label, score = result[0], result[1]
-            else:
+            if len(result) < 2:
                 continue
+
+            label = result[0]
+            score = result[1]
 
         else:
             continue
 
         try:
             score = float(score)
-        except Exception:
+        except (TypeError, ValueError):
             score = 0.0
 
-        normalized.append({"label": str(label), "score": score})
+        normalized.append(
+            {
+                "label": str(label),
+                "score": score,
+            }
+        )
 
     return normalized
 
 
-def reset_upload_form() -> None:
-    """
-    Setzt den Erfassen-Workflow zurück. Durch das Hochzählen von
-    form_reset bekommen file_uploader/camera_input in der
-    nächsten Runde einen neuen Widget-Key und erscheinen
-    dadurch wieder leer (Streamlit-Widgets lassen sich sonst
-    nicht direkt zurücksetzen).
-    """
+def reset_upload_form():
     st.session_state.uploaded_image = None
     st.session_state.image_path = None
     st.session_state.ai_result = None
@@ -829,18 +689,25 @@ def reset_upload_form() -> None:
 
 
 # =========================================================
-# TOP NAVIGATION
+# NAVIGATION
 # =========================================================
 
-def render_navigation() -> None:
+def render_navigation():
+
     st.markdown(
         """
         <div class="topbar">
             <div class="brand">
                 <div class="brand-mark">KF</div>
+
                 <div>
-                    <div class="brand-title">Kath. FundBüro</div>
-                    <div class="brand-subtitle">Katharineum</div>
+                    <div class="brand-title">
+                        Kath. FundBüro
+                    </div>
+
+                    <div class="brand-subtitle">
+                        Katharineum
+                    </div>
                 </div>
             </div>
         </div>
@@ -866,23 +733,42 @@ def render_navigation() -> None:
             unsafe_allow_html=True,
         )
 
-    nav_targets = [
+    navigation = [
         (nav2, "Startseite", "nav_home"),
-        (nav3, "Suchen", "nav_search", "Fundstücke suchen"),
-        (nav4, "Erfassen", "nav_add", "Fundstück erfassen"),
-        (nav5, "Verwaltung", "nav_admin", "Fundbüro verwalten"),
-        (nav6, "Informationen", "nav_info", "Informationen"),
+        (nav3, "Suchen", "nav_search"),
+        (nav4, "Erfassen", "nav_add"),
+        (nav5, "Verwaltung", "nav_admin"),
+        (nav6, "Informationen", "nav_info"),
     ]
 
-    for target in nav_targets:
-        col, label, key = target[0], target[1], target[2]
-        page_name = target[3] if len(target) > 3 else label
+    for column, label, key in navigation:
 
-        with col:
-            st.markdown('<div class="nav-button">', unsafe_allow_html=True)
-            if st.button(label, key=key, use_container_width=True):
-                set_page(page_name)
-            st.markdown("</div>", unsafe_allow_html=True)
+        with column:
+
+            st.markdown(
+                '<div class="nav-button">',
+                unsafe_allow_html=True,
+            )
+
+            if st.button(
+                label,
+                key=key,
+                use_container_width=True,
+            ):
+                target = {
+                    "Startseite": "Startseite",
+                    "Suchen": "Fundstücke suchen",
+                    "Erfassen": "Fundstück erfassen",
+                    "Verwaltung": "Fundbüro verwalten",
+                    "Informationen": "Informationen",
+                }
+
+                set_page(target[label])
+
+            st.markdown(
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
     st.divider()
 
@@ -891,7 +777,7 @@ def render_navigation() -> None:
 # STARTSEITE
 # =========================================================
 
-def render_home() -> None:
+def render_home():
 
     st.markdown(
         """
@@ -923,62 +809,103 @@ def render_home() -> None:
         unsafe_allow_html=True,
     )
 
-    col1, col2, col3 = st.columns(3, gap="large")
+    col1, col2, col3 = st.columns(
+        3,
+        gap="large",
+    )
 
     with col1:
+
         st.markdown(
             """
             <div class="action-card">
+
                 <div class="action-icon">+</div>
-                <div class="action-title">Fundstück erfassen</div>
+
+                <div class="action-title">
+                    Fundstück erfassen
+                </div>
+
                 <div class="action-text">
                     Fotografiere einen gefundenen Gegenstand.
                     Unsere KI unterstützt dich bei der Erkennung.
                 </div>
+
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        st.markdown('<div class="primary-button">', unsafe_allow_html=True)
-        if st.button("Fundstück erfassen", key="home_add", use_container_width=True):
+        st.markdown(
+            '<div class="primary-button">',
+            unsafe_allow_html=True,
+        )
+
+        if st.button(
+            "Fundstück erfassen",
+            key="home_add",
+            use_container_width=True,
+        ):
             set_page("Fundstück erfassen")
+
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
+
         st.markdown(
             """
             <div class="action-card">
+
                 <div class="action-icon">⌕</div>
-                <div class="action-title">Fundstücke suchen</div>
+
+                <div class="action-title">
+                    Fundstücke suchen
+                </div>
+
                 <div class="action-text">
                     Durchsuche das Fundbüro nach Kategorie,
                     Fundort, Farbe oder Suchbegriff.
                 </div>
+
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        if st.button("Fundstücke suchen", key="home_search", use_container_width=True):
+        if st.button(
+            "Fundstücke suchen",
+            key="home_search",
+            use_container_width=True,
+        ):
             set_page("Fundstücke suchen")
 
     with col3:
+
         st.markdown(
             """
             <div class="action-card">
+
                 <div class="action-icon">≡</div>
-                <div class="action-title">Fundbüro verwalten</div>
+
+                <div class="action-title">
+                    Fundbüro verwalten
+                </div>
+
                 <div class="action-text">
                     Fundstücke verwalten, Status ändern
                     und den aktuellen Überblick behalten.
                 </div>
+
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        if st.button("Verwaltungsbereich", key="home_admin", use_container_width=True):
+        if st.button(
+            "Verwaltungsbereich",
+            key="home_admin",
+            use_container_width=True,
+        ):
             set_page("Fundbüro verwalten")
 
     stats = get_statistics()
@@ -991,52 +918,71 @@ def render_home() -> None:
     s1, s2, s3 = st.columns(3)
 
     with s1:
-        st.markdown(
-            f"""
-            <div class="stat-card">
-                <div class="stat-label">Gesamte Fundstücke</div>
-                <div class="stat-number">{stats["total"]}</div>
-                <div class="stat-description">gespeicherte Fundstücke</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        render_stat(
+            "Gesamte Fundstücke",
+            stats["total"],
+            "gespeicherte Fundstücke",
         )
 
     with s2:
-        st.markdown(
-            f"""
-            <div class="stat-card">
-                <div class="stat-label">Verfügbar</div>
-                <div class="stat-number">{stats["available"]}</div>
-                <div class="stat-description">aktuell im Fundbüro</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        render_stat(
+            "Verfügbar",
+            stats["available"],
+            "aktuell im Fundbüro",
         )
 
     with s3:
-        st.markdown(
-            f"""
-            <div class="stat-card">
-                <div class="stat-label">Abgeholt</div>
-                <div class="stat-number">{stats["collected"]}</div>
-                <div class="stat-description">bereits zurückgegeben</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        render_stat(
+            "Abgeholt",
+            stats["collected"],
+            "bereits zurückgegeben",
         )
+
+
+# =========================================================
+# STATISTIK-KARTE
+# =========================================================
+
+def render_stat(label, value, description):
+
+    st.markdown(
+        f"""
+        <div class="stat-card">
+
+            <div class="stat-label">
+                {html.escape(str(label))}
+            </div>
+
+            <div class="stat-number">
+                {value}
+            </div>
+
+            <div class="stat-description">
+                {html.escape(str(description))}
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # =========================================================
 # FUNDSTÜCK ERFASSEN
 # =========================================================
 
-def render_add_item() -> None:
+def render_add_item():
 
     st.markdown(
         """
-        <div class="eyebrow">Neues Fundstück</div>
-        <div class="page-title">Fundstück erfassen</div>
+        <div class="eyebrow">
+            Neues Fundstück
+        </div>
+
+        <div class="page-title">
+            Fundstück erfassen
+        </div>
+
         <div class="page-subtitle">
             Lade ein Foto hoch, lass die KI den Gegenstand erkennen
             und ergänze anschließend die wichtigsten Informationen.
@@ -1045,65 +991,98 @@ def render_add_item() -> None:
         unsafe_allow_html=True,
     )
 
-    active_step = 1 if st.session_state.image_path is None else (
-        2 if not st.session_state.ai_result else 3
-    )
+    if st.session_state.image_path is None:
+        active_step = 1
+    elif st.session_state.ai_result is None:
+        active_step = 2
+    else:
+        active_step = 3
 
-    def step_class(step_number: int) -> str:
-        return "step step-active" if step_number == active_step else "step"
+    def step_class(number):
+        return (
+            "step step-active"
+            if number == active_step
+            else "step"
+        )
 
     st.markdown(
         f"""
         <div class="stepper">
+
             <div class="{step_class(1)}">
                 <div class="step-number">1</div>
                 Foto
             </div>
+
             <div class="step-line"></div>
+
             <div class="{step_class(2)}">
                 <div class="step-number">2</div>
                 KI-Erkennung
             </div>
+
             <div class="step-line"></div>
+
             <div class="{step_class(3)}">
                 <div class="step-number">3</div>
                 Angaben
             </div>
+
             <div class="step-line"></div>
+
             <div class="step">
                 <div class="step-number">4</div>
                 Speichern
             </div>
+
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    left, right = st.columns([1.7, 1], gap="large")
+    left, right = st.columns(
+        [1.7, 1],
+        gap="large",
+    )
 
     with left:
-        st.markdown('<div class="upload-panel">', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div class="upload-panel">',
+            unsafe_allow_html=True,
+        )
 
         st.markdown(
             """
-            <div style="font-size:18px; font-weight:750; margin-bottom:5px;">
+            <div style="
+                font-size:18px;
+                font-weight:750;
+                margin-bottom:5px;
+            ">
                 Foto des Fundstücks
             </div>
-            <div style="color:#6b7280; font-size:13px; margin-bottom:20px;">
+
+            <div style="
+                color:#6b7280;
+                font-size:13px;
+                margin-bottom:20px;
+            ">
                 Ein klares Foto hilft der KI bei der Erkennung.
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # Der Widget-Key hängt von form_reset ab: nach dem Speichern
-        # eines Fundstücks wird form_reset hochgezählt, wodurch diese
-        # Widgets als "neu" gelten und wieder leer erscheinen.
         reset_suffix = st.session_state.form_reset
 
         uploaded_file = st.file_uploader(
             "Foto auswählen",
-            type=["jpg", "jpeg", "png", "webp"],
+            type=[
+                "jpg",
+                "jpeg",
+                "png",
+                "webp",
+            ],
             label_visibility="collapsed",
             key=f"file_uploader_{reset_suffix}",
         )
@@ -1113,85 +1092,144 @@ def render_add_item() -> None:
             key=f"camera_input_{reset_suffix}",
         )
 
-        selected_file = camera_file or uploaded_file
+        selected_file = (
+            camera_file
+            if camera_file is not None
+            else uploaded_file
+        )
 
         if selected_file is not None:
 
-            # Eindeutige Kennung des Uploads. Damit wird das Foto nur
-            # EINMAL auf die Platte geschrieben - vorher wurde bei
-            # jedem Rerun (z. B. beim Ändern eines anderen Feldes)
-            # eine neue Kopie mit neuem Dateinamen angelegt.
-            file_id = getattr(selected_file, "file_id", None) or (
-                f"{selected_file.name}:{len(selected_file.getvalue())}"
+            file_bytes = selected_file.getvalue()
+
+            file_id = (
+                getattr(selected_file, "file_id", None)
+                or f"{selected_file.name}:{len(file_bytes)}"
             )
 
-            if file_id != st.session_state.processed_file_id:
+            if (
+                file_id
+                != st.session_state.processed_file_id
+            ):
 
-                image_bytes = selected_file.getvalue()
-                st.session_state.uploaded_image = image_bytes
+                filename = (
+                    f"{uuid4().hex}"
+                    f"{Path(selected_file.name).suffix.lower()}"
+                )
 
-                filename = f"{uuid4().hex}{Path(selected_file.name).suffix.lower()}"
                 image_path = UPLOAD_DIR / filename
-                image_path.write_bytes(image_bytes)
 
+                image_path.write_bytes(file_bytes)
+
+                st.session_state.uploaded_image = file_bytes
                 st.session_state.image_path = str(image_path)
                 st.session_state.processed_file_id = file_id
 
-                # Ein neues Foto macht ein vorheriges KI-Ergebnis ungültig.
                 st.session_state.ai_result = None
                 st.session_state.ai_top_results = []
 
-            st.image(
-                st.session_state.uploaded_image,
-                caption="Ausgewähltes Foto",
-                use_container_width=True,
+            if st.session_state.uploaded_image:
+                st.image(
+                    st.session_state.uploaded_image,
+                    caption="Ausgewähltes Foto",
+                    use_container_width=True,
+                )
+
+            st.markdown(
+                '<div class="primary-button">',
+                unsafe_allow_html=True,
             )
 
-            st.markdown('<div class="primary-button">', unsafe_allow_html=True)
+            if st.button(
+                "KI-Erkennung starten",
+                key="run_ai",
+                use_container_width=True,
+            ):
 
-            if st.button("KI-Erkennung starten", key="run_ai", use_container_width=True):
                 try:
-                    with st.spinner("Die KI analysiert das Fundstück ..."):
-                        label, confidence, top_results = predict_image(selected_file)
 
-                    st.session_state.ai_result = (label, confidence)
-                    st.session_state.ai_top_results = normalize_top_results(top_results)
+                    with st.spinner(
+                        "Die KI analysiert das Fundstück ..."
+                    ):
 
-                    st.success("KI-Erkennung abgeschlossen.")
+                        label, confidence, top_results = (
+                            predict_image(selected_file)
+                        )
 
-                except Exception as e:
-                    st.error(f"Die KI-Erkennung konnte nicht durchgeführt werden: {e}")
+                    st.session_state.ai_result = (
+                        label,
+                        confidence,
+                    )
+
+                    st.session_state.ai_top_results = (
+                        normalize_top_results(top_results)
+                    )
+
+                    st.success(
+                        "KI-Erkennung abgeschlossen."
+                    )
+
+                except Exception as error:
+
+                    st.error(
+                        "Die KI-Erkennung konnte "
+                        f"nicht durchgeführt werden: {error}"
+                    )
 
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
+
         if st.session_state.ai_result:
 
-            label, confidence = st.session_state.ai_result
-            confidence_percent = confidence * 100
+            label, confidence = (
+                st.session_state.ai_result
+            )
+
+            try:
+                confidence_percent = float(confidence) * 100
+            except (TypeError, ValueError):
+                confidence_percent = 0
 
             st.markdown(
                 f"""
                 <div class="ai-box">
-                    <div class="ai-label">KI-Erkennung</div>
-                    <div class="ai-result">{html.escape(str(label))}</div>
+
+                    <div class="ai-label">
+                        KI-Erkennung
+                    </div>
+
+                    <div class="ai-result">
+                        {html.escape(str(label))}
+                    </div>
+
                     <div class="confidence">
                         Erkennungswahrscheinlichkeit:
-                        <strong>{confidence_percent:.0f}%</strong>
+                        <strong>
+                            {confidence_percent:.0f}%
+                        </strong>
                     </div>
+
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            top_results = st.session_state.ai_top_results
+            top_results = (
+                st.session_state.ai_top_results
+            )
 
             if top_results:
+
                 st.markdown(
                     """
-                    <div style="margin-top:20px; font-size:13px; font-weight:700;">
+                    <div style="
+                        margin-top:20px;
+                        font-size:13px;
+                        font-weight:700;
+                    ">
                         Weitere Möglichkeiten
                     </div>
                     """,
@@ -1199,7 +1237,9 @@ def render_add_item() -> None:
                 )
 
                 for item in top_results[:4]:
+
                     score = item["score"] * 100
+
                     st.markdown(
                         f"""
                         <div style="
@@ -1209,55 +1249,108 @@ def render_add_item() -> None:
                             border-bottom:1px solid #eee;
                             font-size:12px;
                         ">
-                            <span>{html.escape(item["label"])}</span>
-                            <span style="color:#6b7280;">{score:.0f}%</span>
+
+                            <span>
+                                {html.escape(item["label"])}
+                            </span>
+
+                            <span style="color:#6b7280;">
+                                {score:.0f}%
+                            </span>
+
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
 
         else:
+
             st.markdown(
                 """
                 <div class="info-box">
-                    <div class="info-title">Noch keine KI-Erkennung</div>
+
+                    <div class="info-title">
+                        Noch keine KI-Erkennung
+                    </div>
+
                     <div class="info-text">
                         Lade zunächst ein Foto hoch und starte
                         anschließend die KI-Erkennung.
                     </div>
+
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+
+    # -------------------------------------------------------
+    # Angaben
+    # -------------------------------------------------------
 
     st.markdown(
         '<div class="section-title">Angaben zum Fundstück</div>',
         unsafe_allow_html=True,
     )
 
-    form_col1, form_col2 = st.columns(2, gap="large")
+    form_col1, form_col2 = st.columns(
+        2,
+        gap="large",
+    )
 
     with form_col1:
+
         detected_category = "Sonstiger Gegenstand"
 
         if st.session_state.ai_result:
-            detected_category = st.session_state.ai_result[0]
+
+            detected_category = (
+                st.session_state.ai_result[0]
+            )
 
         category_options = list(CATEGORIES)
 
-        if detected_category not in category_options:
-            detected_category = "Sonstiger Gegenstand"
+        if (
+            detected_category
+            not in category_options
+        ):
+            detected_category = (
+                "Sonstiger Gegenstand"
+            )
 
-        category_index = category_options.index(detected_category)
+        if (
+            detected_category
+            not in category_options
+        ):
+            category_options.append(
+                detected_category
+            )
 
-        kategorie = st.selectbox("Kategorie", category_options, index=category_index)
-        farbe = st.text_input("Farbe", placeholder="z. B. blau, schwarz, rot ...")
-        groesse = st.text_input("Größe", placeholder="z. B. M, 42, klein ...")
+        category_index = category_options.index(
+            detected_category
+        )
+
+        kategorie = st.selectbox(
+            "Kategorie",
+            category_options,
+            index=category_index,
+        )
+
+        farbe = st.text_input(
+            "Farbe",
+            placeholder="z. B. blau, schwarz, rot ...",
+        )
+
+        groesse = st.text_input(
+            "Größe",
+            placeholder="z. B. M, 42, klein ...",
+        )
 
     with form_col2:
-        # "Alle Bereiche" gehört hier nicht hin - ein gefundener
-        # Gegenstand hat immer genau einen Fundort.
-        fundort = st.selectbox("Fundort", FUNDORTE_ERFASSEN)
+
+        fundort = st.selectbox(
+            "Fundort",
+            FUNDORTE,
+        )
 
         funddatum = st.date_input(
             "Funddatum",
@@ -1275,125 +1368,227 @@ def render_add_item() -> None:
         )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown('<div class="primary-button">', unsafe_allow_html=True)
 
-    if st.button("Fundstück speichern", key="save_item", use_container_width=True):
+    st.markdown(
+        '<div class="primary-button">',
+        unsafe_allow_html=True,
+    )
+
+    if st.button(
+        "Fundstück speichern",
+        key="save_item",
+        use_container_width=True,
+    ):
 
         if st.session_state.image_path is None:
-            st.warning("Bitte lade zuerst ein Foto des Fundstücks hoch.")
+
+            st.warning(
+                "Bitte lade zuerst ein Foto "
+                "des Fundstücks hoch."
+            )
 
         elif not kategorie:
-            st.warning("Bitte wähle eine Kategorie.")
+
+            st.warning(
+                "Bitte wähle eine Kategorie."
+            )
 
         else:
-            try:
-                confidence = 0.0
-                if st.session_state.ai_result:
-                    confidence = float(st.session_state.ai_result[1])
 
-                # WICHTIG: KEIN status="Gefunden" hier!
-                # database.py setzt automatisch "Verfügbar".
+            try:
+
+                confidence = 0.0
+
+                if st.session_state.ai_result:
+
+                    confidence = float(
+                        st.session_state.ai_result[1]
+                    )
+
                 save_item(
                     kategorie=kategorie,
                     farbe=farbe,
                     groesse=groesse,
                     fundort=fundort,
-                    funddatum=funddatum.strftime("%Y-%m-%d"),
+                    funddatum=funddatum.strftime(
+                        "%Y-%m-%d"
+                    ),
                     beschreibung=beschreibung,
-                    bildpfad=st.session_state.image_path,
+                    bildpfad=(
+                        st.session_state.image_path
+                    ),
                     ki_konfidenz=confidence,
                 )
 
-                st.success("Das Fundstück wurde erfolgreich gespeichert.")
-                st.info("Das Fundstück ist jetzt im Fundbüro verfügbar.")
+                st.success(
+                    "Das Fundstück wurde "
+                    "erfolgreich gespeichert."
+                )
 
                 reset_upload_form()
+
                 st.rerun()
 
-            except Exception as e:
-                st.error(f"Beim Speichern ist ein Fehler aufgetreten: {e}")
+            except Exception as error:
+
+                st.error(
+                    "Beim Speichern ist ein Fehler "
+                    f"aufgetreten: {error}"
+                )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 # =========================================================
-# SUCHEN
+# FUNDSTÜCK-KARTE
 # =========================================================
 
-def render_item_card(item: dict) -> None:
-    image_uri = image_to_data_uri(item["bildpfad"]) if item["bildpfad"] else None
+def render_item_card(item):
+
+    image_uri = None
+
+    if item["bildpfad"]:
+        image_uri = image_to_data_uri(
+            item["bildpfad"]
+        )
 
     if image_uri:
-        image_html = f'<img class="item-image" src="{image_uri}">'
+
+        image_html = (
+            '<img class="item-image" '
+            f'src="{image_uri}">'
+        )
+
     else:
+
         image_html = """
         <div class="item-image-placeholder">
             Kein Foto verfügbar
         </div>
         """
 
-    farbe_zeile = (
-        f'Farbe: {html.escape(str(item["farbe"]))}<br>'
-        if item["farbe"]
-        else ""
-    )
+    color_line = ""
+
+    if item["farbe"]:
+        color_line = (
+            f'Farbe: '
+            f'{html.escape(str(item["farbe"]))}<br>'
+        )
+
+    size_line = ""
+
+    if item["groesse"]:
+        size_line = (
+            f'Größe: '
+            f'{html.escape(str(item["groesse"]))}<br>'
+        )
 
     st.markdown(
         f"""
         <div class="item-card">
+
             {image_html}
+
             <div class="item-content">
+
                 <div class="item-category">
-                    {html.escape(str(item["kategorie"]))}
+                    {html.escape(
+                        str(item["kategorie"])
+                    )}
                 </div>
+
                 <div class="item-meta">
-                    {farbe_zeile}
-                    Fundort: {html.escape(str(item["fundort"]))}
+
+                    {color_line}
+
+                    {size_line}
+
+                    Fundort:
+                    {html.escape(
+                        str(item["fundort"])
+                    )}
+
                     <br>
-                    Datum: {html.escape(str(item["funddatum"]))}
+
+                    Datum:
+                    {html.escape(
+                        str(item["funddatum"])
+                    )}
+
                 </div>
+
                 {status_html(item["status"])}
+
             </div>
+
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
+# =========================================================
+# SUCHEN
+# =========================================================
 
-def render_search() -> None:
+def render_search():
 
     st.markdown(
         """
-        <div class="eyebrow">Fundbüro</div>
-        <div class="page-title">Fundstücke suchen</div>
+        <div class="eyebrow">
+            Fundbüro
+        </div>
+
+        <div class="page-title">
+            Fundstücke suchen
+        </div>
+
         <div class="page-subtitle">
-            Durchsuche das Fundbüro nach verlorenen Gegenständen.
-            Nutze Suchbegriffe und Filter, um schneller fündig zu werden.
+            Durchsuche das Fundbüro nach verlorenen
+            Gegenständen.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="search-box">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="search-box">',
+        unsafe_allow_html=True,
+    )
+
     search_text = st.text_input(
         "Suche",
-        placeholder="Wonach suchst du? z. B. Rucksack, blau, Sporthalle ...",
+        placeholder=(
+            "Wonach suchst du? "
+            "z. B. Rucksack, blau, Sporthalle ..."
+        ),
         label_visibility="collapsed",
     )
+
     st.markdown("</div>", unsafe_allow_html=True)
 
     f1, f2, f3 = st.columns(3)
 
     with f1:
-        search_category = st.selectbox("Kategorie", ["Alle"] + list(CATEGORIES))
+
+        search_category = st.selectbox(
+            "Kategorie",
+            ["Alle"] + list(CATEGORIES),
+        )
 
     with f2:
-        search_location = st.selectbox("Fundort", FUNDORTE_FILTER)
+
+        search_location = st.selectbox(
+            "Fundort",
+            FUNDORTE_FILTER,
+        )
 
     with f3:
-        search_status = st.selectbox("Status", STATUS_OPTIONEN)
+
+        search_status = st.selectbox(
+            "Status",
+            STATUS_OPTIONEN,
+        )
 
     results = search_items(
         kategorie=search_category,
@@ -1403,151 +1598,79 @@ def render_search() -> None:
     )
 
     st.markdown(
-        f'<div class="section-title">{len(results)} Fundstücke gefunden</div>',
-        unsafe_allow_html=True,
-    )
-
-    if not results:
-        st.markdown(
-            """
-            <div class="info-box">
-                <div class="info-title">Keine Fundstücke gefunden</div>
-                <div class="info-text">
-                    Versuche einen anderen Suchbegriff
-                    oder ändere deine Filter.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        return
-
-    for start in range(0, len(results), 4):
-        row_items = results[start:start + 4]
-        cols = st.columns(4, gap="medium")
-
-        for col, item in zip(cols, row_items):
-            with col:
-                render_item_card(item)
-
-
-# =========================================================
-# ADMIN / VERWALTUNG
-# =========================================================
-
-def render_admin_stat(label: str, value, description: str) -> None:
-    st.markdown(
         f"""
-        <div class="stat-card">
-            <div class="stat-label">{label}</div>
-            <div class="stat-number">{value}</div>
-            <div class="stat-description">{description}</div>
+        <div class="section-title">
+            {len(results)} Fundstücke gefunden
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    if not results:
 
-def render_admin_row(item: dict) -> None:
-    item_id = item["id"]
+        st.markdown(
+            """
+            <div class="info-box">
 
-    with st.container():
-        st.markdown('<div class="admin-panel">', unsafe_allow_html=True)
-
-        c1, c2, c3, c4 = st.columns([0.8, 2.2, 2.2, 2.3])
-
-        with c1:
-            if item["bildpfad"]:
-                image_uri = image_to_data_uri(item["bildpfad"])
-                if image_uri:
-                    st.image(image_uri, width=75)
-
-        with c2:
-            st.markdown(
-                f"""
-                <div style="font-weight:750; margin-bottom:5px;">
-                    {html.escape(str(item["kategorie"]))}
+                <div class="info-title">
+                    Keine Fundstücke gefunden
                 </div>
-                <div style="color:#6b7280; font-size:12px;">
-                    ID #{item_id}
+
+                <div class="info-text">
+                    Versuche einen anderen Suchbegriff
+                    oder ändere deine Filter.
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
 
-        with c3:
-            st.markdown(
-                f"""
-                <div style="color:#6b7280; font-size:12px; line-height:1.8;">
-                    Fundort:
-                    <strong style="color:#222">
-                        {html.escape(str(item["fundort"]))}
-                    </strong>
-                    <br>
-                    Datum:
-                    <strong style="color:#222">
-                        {html.escape(str(item["funddatum"]))}
-                    </strong>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        with c4:
-            current_status = item["status"]
+        return
 
-            if current_status == "Verfügbar":
-                if st.button(
-                    "Als abgeholt markieren",
-                    key=f"collect_{item_id}",
-                    use_container_width=True,
-                ):
-                    update_item_status(item_id, "Abgeholt")
-                    st.rerun()
-            else:
-                if st.button(
-                    "Wieder verfügbar",
-                    key=f"available_{item_id}",
-                    use_container_width=True,
-                ):
-                    update_item_status(item_id, "Verfügbar")
-                    st.rerun()
+    for start in range(
+        0,
+        len(results),
+        4,
+    ):
 
-            if st.button(
-                "Fundstück löschen",
-                key=f"delete_{item_id}",
-                use_container_width=True,
-            ):
-                delete_item(item_id)
+        row_items = results[
+            start:start + 4
+        ]
 
-                image_path = item["bildpfad"]
-                if image_path:
-                    try:
-                        path = Path(image_path)
-                        if path.exists():
-                            path.unlink()
-                    except Exception:
-                        pass
+        cols = st.columns(
+            4,
+            gap="medium",
+        )
 
-                # Zwischengespeicherte Data-URI dieses Bildes ist jetzt
-                # ungültig - Cache-Eintrag verwerfen.
-                image_to_data_uri.clear()
+        for col, item in zip(
+            cols,
+            row_items,
+        ):
 
-                st.rerun()
-
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+            with col:
+                render_item_card(item)
 
 
-def render_admin() -> None:
+# =========================================================
+# VERWALTUNG
+# =========================================================
+
+def render_admin():
 
     st.markdown(
         """
-        <div class="eyebrow">Verwaltung</div>
-        <div class="page-title">Fundbüro verwalten</div>
+        <div class="eyebrow">
+            Verwaltung
+        </div>
+
+        <div class="page-title">
+            Fundbüro verwalten
+        </div>
+
         <div class="page-subtitle">
             Verwalte alle Fundstücke, aktualisiere den Status
-            und behalte den Überblick über das Fundbüro.
+            und behalte den Überblick.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1558,53 +1681,242 @@ def render_admin() -> None:
     a1, a2, a3, a4 = st.columns(4)
 
     with a1:
-        render_admin_stat("Gesamt", stats["total"], "Fundstücke")
-    with a2:
-        render_admin_stat("Verfügbar", stats["available"], "Noch vorhanden")
-    with a3:
-        render_admin_stat("Abgeholt", stats["collected"], "Bereits zurückgegeben")
-    with a4:
-        render_admin_stat("Trinkflaschen", stats["bottles"], "gespeicherte Flaschen")
+        render_stat(
+            "Gesamt",
+            stats["total"],
+            "Fundstücke",
+        )
 
-    st.markdown('<div class="section-title">Alle Fundstücke</div>', unsafe_allow_html=True)
+    with a2:
+        render_stat(
+            "Verfügbar",
+            stats["available"],
+            "Noch vorhanden",
+        )
+
+    with a3:
+        render_stat(
+            "Abgeholt",
+            stats["collected"],
+            "Zurückgegeben",
+        )
+
+    with a4:
+        render_stat(
+            "Trinkflaschen",
+            stats["bottles"],
+            "Gespeicherte Flaschen",
+        )
+
+    st.markdown(
+        '<div class="section-title">Alle Fundstücke</div>',
+        unsafe_allow_html=True,
+    )
 
     admin_search = st.text_input(
         "Fundstücke durchsuchen",
-        placeholder="Nach Kategorie, Farbe, Beschreibung oder Fundort suchen ...",
+        placeholder=(
+            "Kategorie, Farbe, Beschreibung "
+            "oder Fundort ..."
+        ),
+        key="admin_search",
     )
 
-    admin_status = st.selectbox("Status filtern", STATUS_OPTIONEN)
+    admin_status = st.selectbox(
+        "Status filtern",
+        STATUS_OPTIONEN,
+        key="admin_status",
+    )
 
-    admin_results = search_items(status=admin_status, suchtext=admin_search)
+    admin_results = search_items(
+        status=admin_status,
+        suchtext=admin_search,
+    )
 
     if not admin_results:
+
         st.markdown(
             """
             <div class="info-box">
-                <div class="info-title">Keine Fundstücke</div>
-                <div class="info-text">
-                    Es wurden keine passenden Fundstücke gefunden.
+
+                <div class="info-title">
+                    Keine Fundstücke
                 </div>
+
+                <div class="info-text">
+                    Es wurden keine passenden
+                    Fundstücke gefunden.
+                </div>
+
             </div>
             """,
             unsafe_allow_html=True,
         )
+
         return
 
     for item in admin_results:
         render_admin_row(item)
 
 
+def render_admin_row(item):
+
+    item_id = item["id"]
+
+    st.markdown(
+        '<div class="admin-panel">',
+        unsafe_allow_html=True,
+    )
+
+    c1, c2, c3, c4 = st.columns(
+        [0.8, 2.2, 2.2, 2.3]
+    )
+
+    with c1:
+
+        if item["bildpfad"]:
+
+            image_uri = image_to_data_uri(
+                item["bildpfad"]
+            )
+
+            if image_uri:
+                st.image(
+                    image_uri,
+                    width=75,
+                )
+
+    with c2:
+
+        st.markdown(
+            f"""
+            <div style="
+                font-weight:750;
+                margin-bottom:5px;
+            ">
+                {html.escape(
+                    str(item["kategorie"])
+                )}
+            </div>
+
+            <div style="
+                color:#6b7280;
+                font-size:12px;
+            ">
+                ID #{item_id}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c3:
+
+        st.markdown(
+            f"""
+            <div style="
+                color:#6b7280;
+                font-size:12px;
+                line-height:1.8;
+            ">
+
+                Fundort:
+                <strong style="color:#222">
+                    {html.escape(
+                        str(item["fundort"])
+                    )}
+                </strong>
+
+                <br>
+
+                Datum:
+                <strong style="color:#222">
+                    {html.escape(
+                        str(item["funddatum"])
+                    )}
+                </strong>
+
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c4:
+
+        if item["status"] == "Verfügbar":
+
+            if st.button(
+                "Als abgeholt markieren",
+                key=f"collect_{item_id}",
+                use_container_width=True,
+            ):
+
+                update_item_status(
+                    item_id,
+                    "Abgeholt",
+                )
+
+                st.rerun()
+
+        else:
+
+            if st.button(
+                "Wieder verfügbar",
+                key=f"available_{item_id}",
+                use_container_width=True,
+            ):
+
+                update_item_status(
+                    item_id,
+                    "Verfügbar",
+                )
+
+                st.rerun()
+
+        if st.button(
+            "Fundstück löschen",
+            key=f"delete_{item_id}",
+            use_container_width=True,
+        ):
+
+            image_path = item["bildpfad"]
+
+            deleted = delete_item(item_id)
+
+            if deleted and image_path:
+
+                try:
+
+                    path = Path(image_path)
+
+                    if path.exists():
+                        path.unlink()
+
+                except Exception:
+                    pass
+
+            image_to_data_uri.clear()
+
+            st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 # =========================================================
 # INFORMATIONEN
 # =========================================================
 
-def render_info() -> None:
+def render_info():
 
     st.markdown(
         """
-        <div class="eyebrow">Katharineum</div>
-        <div class="page-title">Informationen</div>
+        <div class="eyebrow">
+            Katharineum
+        </div>
+
+        <div class="page-title">
+            Informationen
+        </div>
+
         <div class="page-subtitle">
             Alles Wichtige über das digitale Fundbüro.
         </div>
@@ -1612,55 +1924,59 @@ def render_info() -> None:
         unsafe_allow_html=True,
     )
 
-    st.markdown(
-        """
-        <div class="info-box">
-            <div class="info-title">Was ist das Kath. FundBüro?</div>
-            <div class="info-text">
-                Das Kath. FundBüro ist eine digitale Lösung
-                zur Verwaltung verlorener und gefundener
-                Gegenstände am Katharineum.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    info_sections = [
+        (
+            "Was ist das Kath. FundBüro?",
+            """
+            Das Kath. FundBüro ist eine digitale Lösung
+            zur Verwaltung verlorener und gefundener
+            Gegenstände am Katharineum.
+            """,
+        ),
+        (
+            "Wie funktioniert die KI?",
+            """
+            Beim Erfassen eines Fundstücks kann ein Foto
+            hochgeladen werden. Ein KI-Modell analysiert
+            das Bild und schlägt eine passende Kategorie vor.
+            Die vorgeschlagene Kategorie kann anschließend
+            kontrolliert und verändert werden.
+            """,
+        ),
+        (
+            "Was passiert mit den Daten?",
+            """
+            Die Fundstücke werden in der Datenbank des
+            digitalen Fundbüros gespeichert. Zu jedem
+            Fundstück können Kategorie, Farbe, Größe,
+            Fundort, Datum, Beschreibung und Foto
+            hinterlegt werden.
+            """,
+        ),
+    ]
 
-    st.markdown(
-        """
-        <div class="info-box">
-            <div class="info-title">Wie funktioniert die KI?</div>
-            <div class="info-text">
-                Beim Erfassen eines Fundstücks kann ein Foto
-                hochgeladen werden. Ein KI-Modell analysiert
-                das Bild und schlägt eine passende Kategorie vor.
-                Die vorgeschlagene Kategorie kann anschließend
-                kontrolliert und verändert werden.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    for title, text in info_sections:
 
-    st.markdown(
-        """
-        <div class="info-box">
-            <div class="info-title">Was passiert mit den Daten?</div>
-            <div class="info-text">
-                Die Fundstücke werden in der Datenbank des
-                digitalen Fundbüros gespeichert. Zu jedem
-                Fundstück können unter anderem Kategorie,
-                Farbe, Größe, Fundort, Datum, Beschreibung
-                und Foto hinterlegt werden.
+        st.markdown(
+            f"""
+            <div class="info-box">
+
+                <div class="info-title">
+                    {title}
+                </div>
+
+                <div class="info-text">
+                    {text}
+                </div>
+
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 # =========================================================
-# SEITEN-ROUTING
+# ROUTING
 # =========================================================
 
 PAGES = {
@@ -1672,9 +1988,15 @@ PAGES = {
 }
 
 
-def main() -> None:
+def main():
+
     render_navigation()
-    render_page = PAGES.get(st.session_state.page, render_home)
+
+    render_page = PAGES.get(
+        st.session_state.page,
+        render_home,
+    )
+
     render_page()
 
 
