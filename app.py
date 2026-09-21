@@ -19,6 +19,36 @@ from ai_model import predict_image, CATEGORIES
 
 
 # =========================================================
+# FIX: EINGERÜCKTES HTML IN st.markdown()
+# =========================================================
+# In diesem Modul wird HTML fast immer als mehrzeiliger,
+# eingerückter String übergeben (z. B. innerhalb von
+# Funktionen mit 4/8/12 Leerzeichen Einrückung). Markdown
+# interpretiert eine Leerzeile gefolgt von eingerücktem Text
+# aber als "Codeblock" - der Inhalt wird dann als reiner,
+# escapter Text angezeigt statt als HTML gerendert
+# (sichtbares Symptom: rohe <div>-Tags erscheinen als Text
+# auf der Seite, z. B. im Hero-Bereich der Startseite).
+#
+# Statt das an jeder einzelnen st.markdown()-Stelle im Code
+# manuell zu reparieren, wird hier st.markdown() einmalig so
+# umgeschrieben, dass bei HTML-Inhalten (unsafe_allow_html=True)
+# automatisch alle führenden Leerzeichen jeder Zeile entfernt
+# werden, bevor der Text an den Renderer geht.
+
+_original_st_markdown = st.markdown
+
+
+def _markdown_with_dedented_html(body, *args, **kwargs):
+    if kwargs.get("unsafe_allow_html") and isinstance(body, str):
+        body = "\n".join(line.lstrip() for line in body.split("\n"))
+    return _original_st_markdown(body, *args, **kwargs)
+
+
+st.markdown = _markdown_with_dedented_html
+
+
+# =========================================================
 # GRUNDKONFIGURATION
 # =========================================================
 
@@ -880,7 +910,7 @@ def render_navigation() -> None:
 
         with col:
             st.markdown('<div class="nav-button">', unsafe_allow_html=True)
-            if st.button(label, key=key, use_container_width=True):
+            if st.button(label, key=key, width="stretch"):
                 set_page(page_name)
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -941,7 +971,7 @@ def render_home() -> None:
         )
 
         st.markdown('<div class="primary-button">', unsafe_allow_html=True)
-        if st.button("Fundstück erfassen", key="home_add", use_container_width=True):
+        if st.button("Fundstück erfassen", key="home_add", width="stretch"):
             set_page("Fundstück erfassen")
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -960,7 +990,7 @@ def render_home() -> None:
             unsafe_allow_html=True,
         )
 
-        if st.button("Fundstücke suchen", key="home_search", use_container_width=True):
+        if st.button("Fundstücke suchen", key="home_search", width="stretch"):
             set_page("Fundstücke suchen")
 
     with col3:
@@ -978,7 +1008,7 @@ def render_home() -> None:
             unsafe_allow_html=True,
         )
 
-        if st.button("Verwaltungsbereich", key="home_admin", use_container_width=True):
+        if st.button("Verwaltungsbereich", key="home_admin", width="stretch"):
             set_page("Fundbüro verwalten")
 
     stats = get_statistics()
@@ -1144,12 +1174,12 @@ def render_add_item() -> None:
             st.image(
                 st.session_state.uploaded_image,
                 caption="Ausgewähltes Foto",
-                use_container_width=True,
+                width="stretch",
             )
 
             st.markdown('<div class="primary-button">', unsafe_allow_html=True)
 
-            if st.button("KI-Erkennung starten", key="run_ai", use_container_width=True):
+            if st.button("KI-Erkennung starten", key="run_ai", width="stretch"):
                 try:
                     with st.spinner("Die KI analysiert das Fundstück ..."):
                         label, confidence, top_results = predict_image(selected_file)
@@ -1277,7 +1307,7 @@ def render_add_item() -> None:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="primary-button">', unsafe_allow_html=True)
 
-    if st.button("Fundstück speichern", key="save_item", use_container_width=True):
+    if st.button("Fundstück speichern", key="save_item", width="stretch"):
 
         if st.session_state.image_path is None:
             st.warning("Bitte lade zuerst ein Foto des Fundstücks hoch.")
@@ -1500,7 +1530,7 @@ def render_admin_row(item: dict) -> None:
                 if st.button(
                     "Als abgeholt markieren",
                     key=f"collect_{item_id}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     update_item_status(item_id, "Abgeholt")
                     st.rerun()
@@ -1508,7 +1538,7 @@ def render_admin_row(item: dict) -> None:
                 if st.button(
                     "Wieder verfügbar",
                     key=f"available_{item_id}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     update_item_status(item_id, "Verfügbar")
                     st.rerun()
@@ -1516,7 +1546,7 @@ def render_admin_row(item: dict) -> None:
             if st.button(
                 "Fundstück löschen",
                 key=f"delete_{item_id}",
-                use_container_width=True,
+                width="stretch",
             ):
                 delete_item(item_id)
 
