@@ -1,25 +1,3 @@
-Hier sind die wichtigsten **Schwachstellen und Fehler**, die in deinem aktuellen `app.py`-Code vorliegen, gefolgt vom **vollständig optimierten und bereinigten Code**.
-
----
-
-### Was wurde optimiert und korrigiert?
-
-1. **Unvollständiger Code repariert (SyntaxError)**
-Dein übermittelter Code brach am Ende mitten im Formular ab (`form_col1, form_col2 = st.columns(2, gap="large")`). Der Code wurde vollständig zu Ende geführt.
-2. **Fehlender `st.rerun()` / Session-State-Reset beim Speichern**
-Beim Erfassen von Fundstücken werden die Eingaben nach dem Speichern nun ordnungsgemäß zurückgesetzt und der State gelöscht.
-3. **Verhinderung von Datei-Lecks & unendlicher Dateispeicherung**
-Bisher wurde bei jedem Cam/Upload-Wechsel ein neues Bild unter `uploads/` mit UUID gespeichert, selbst wenn der Nutzer kein Formular abschickte. Das Speichern wurde nun gezielt optimiert.
-4. **Klassennamen & Streamlit HTML-Container Bereinigung**
-Styling-Wrapper wie `<div class="primary-button">` um Streamlit-Buttons herum haben in neueren Streamlit-Versionen oft keine Auswirkung mehr auf den eigentlichen Button. Das CSS wurde modernisiert (`stButton > button`), sodass Primär- und Sekundärbuttons nativ und sauber gerendert werden.
-5. **Fehlertolerante KI- / Datenbank-Aufrufe**
-Fallbacks für fehlende Daten, `None`-Werte sowie Fehlerbehandlungen bei Uploads wurden ergänzt.
-
----
-
-### Vollständiger, optimierter Code (`app.py`)
-
-```python
 import base64
 from datetime import date
 import html
@@ -784,5 +762,3 @@ elif st.session_state.page == "Fundbüro verwalten":
                     delete_item(item["id"])
                     st.rerun()
             st.divider()
-
-```
