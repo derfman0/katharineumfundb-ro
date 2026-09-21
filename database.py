@@ -1,4 +1,3 @@
-```python
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -11,26 +10,19 @@ from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "fundbuero.db"
 
-# Erlaubte Statuswerte.
-# Dadurch können keine versehentlichen oder ungültigen
-# Statuswerte in der Datenbank gespeichert werden.
-STATUS_OPTIONEN = {
-    "Verfügbar",
-    "Abgeholt",
+STATUS_VERFUEGBAR = "Verfügbar"
+STATUS_ABGEHOLT = "Abgeholt"
+
+GUELTIGE_STATUS = {
+    STATUS_VERFUEGBAR,
+    STATUS_ABGEHOLT,
 }
 
 
 def get_connection():
-    """
-    Erstellt eine Verbindung zur SQLite-Datenbank.
-
-    Die Row Factory sorgt dafür, dass Datensätze sowohl
-    über Spaltennamen als auch über Indexe angesprochen
-    werden können.
-    """
+    """Erstellt eine Verbindung zur SQLite-Datenbank."""
 
     connection = sqlite3.connect(str(DATABASE_PATH))
-
     connection.row_factory = sqlite3.Row
 
     return connection
@@ -41,10 +33,7 @@ def get_connection():
 # ============================================================
 
 def init_database():
-    """
-    Erstellt die Datenbank und die Tabelle automatisch,
-    falls sie noch nicht existieren.
-    """
+    """Erstellt die Datenbank und Tabelle automatisch."""
 
     connection = get_connection()
 
@@ -62,7 +51,7 @@ def init_database():
                 funddatum TEXT,
                 beschreibung TEXT,
                 bildpfad TEXT,
-                ki_konfidenz REAL,
+                ki_konfidenz REAL DEFAULT 0,
                 status TEXT DEFAULT 'Verfügbar',
                 erstellt_am TEXT
             )
@@ -89,31 +78,17 @@ def save_item(
     bildpfad,
     ki_konfidenz,
 ):
-    """
-    Speichert ein neues Fundstück.
-
-    Neue Fundstücke werden immer automatisch als
-    'Verfügbar' gespeichert.
-    """
+    """Speichert ein neues Fundstück."""
 
     if not kategorie:
         raise ValueError("Die Kategorie darf nicht leer sein.")
 
-    # Leere Texte einheitlich als None speichern.
-    farbe = farbe.strip() if farbe else None
-    groesse = groesse.strip() if groesse else None
-    fundort = fundort.strip() if fundort else None
-    beschreibung = beschreibung.strip() if beschreibung else None
-    bildpfad = str(bildpfad) if bildpfad else None
-
-    # KI-Konfidenz sauber in einen Float umwandeln.
     try:
-        ki_konfidenz = float(ki_konfidenz or 0.0)
+        confidence = float(ki_konfidenz or 0)
     except (TypeError, ValueError):
-        ki_konfidenz = 0.0
+        confidence = 0.0
 
-    # Konfidenz auf den gültigen Bereich 0.0–1.0 begrenzen.
-    ki_konfidenz = max(0.0, min(1.0, ki_konfidenz))
+    confidence = max(0.0, min(1.0, confidence))
 
     connection = get_connection()
 
@@ -137,15 +112,15 @@ def save_item(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                kategorie.strip(),
-                farbe,
-                groesse,
-                fundort,
-                funddatum,
-                beschreibung,
-                bildpfad,
-                ki_konfidenz,
-                "Verfügbar",
+                str(kategorie).strip(),
+                str(farbe).strip() if farbe else None,
+                str(groesse).strip() if groesse else None,
+                str(fundort).strip() if fundort else None,
+                str(funddatum) if funddatum else None,
+                str(beschreibung).strip() if beschreibung else None,
+                str(bildpfad) if bildpfad else None,
+                confidence,
+                STATUS_VERFUEGBAR,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             ),
         )
@@ -163,11 +138,7 @@ def save_item(
 # ============================================================
 
 def get_all_items():
-    """
-    Gibt alle Fundstücke zurück.
-
-    Neueste Fundstücke stehen zuerst.
-    """
+    """Gibt alle Fundstücke zurück."""
 
     connection = get_connection()
 
@@ -189,16 +160,11 @@ def get_all_items():
 
 
 # ============================================================
-# EIN FUNDSTÜCK ABRUFEN
+# EIN FUNDSTÜCK
 # ============================================================
 
 def get_item(item_id):
-    """
-    Gibt ein einzelnes Fundstück anhand seiner ID zurück.
-
-    Wenn kein passendes Fundstück existiert, wird None
-    zurückgegeben.
-    """
+    """Gibt ein einzelnes Fundstück zurück."""
 
     connection = get_connection()
 
@@ -231,23 +197,7 @@ def search_items(
     status=None,
     suchtext=None,
 ):
-    """
-    Sucht nach Fundstücken.
-
-    Unterstützte Filter:
-    - Kategorie
-    - Farbe
-    - Fundort
-    - Status
-    - Freitext
-
-    Die Freitextsuche durchsucht:
-    - Kategorie
-    - Farbe
-    - Größe
-    - Beschreibung
-    - Fundort
-    """
+    """Sucht nach Fundstücken."""
 
     connection = get_connection()
 
@@ -257,7 +207,7 @@ def search_items(
         query = """
             SELECT *
             FROM fundstuecke
-            WHERE 1=1
+            WHERE 1 = 1
         """
 
         parameters = []
@@ -277,7 +227,7 @@ def search_items(
         # Farbe
         # ----------------------------------------------------
 
-        if farbe:
+        if farbe and farbe.strip():
             query += """
                 AND LOWER(COALESCE(farbe, '')) LIKE LOWER(?)
             """
@@ -301,7 +251,7 @@ def search_items(
 
         if status and status != "Alle":
 
-            if status not in STATUS_OPTIONEN:
+            if status not in GUELTIGE_STATUS:
                 raise ValueError(
                     f"Ungültiger Status: {status}"
                 )
@@ -340,10 +290,6 @@ def search_items(
                 ]
             )
 
-        # ----------------------------------------------------
-        # Sortierung
-        # ----------------------------------------------------
-
         query += """
             ORDER BY id DESC
         """
@@ -361,15 +307,9 @@ def search_items(
 # ============================================================
 
 def update_item_status(item_id, status):
-    """
-    Ändert den Status eines Fundstücks.
+    """Ändert den Status eines Fundstücks."""
 
-    Erlaubte Werte:
-    - Verfügbar
-    - Abgeholt
-    """
-
-    if status not in STATUS_OPTIONEN:
+    if status not in GUELTIGE_STATUS:
         raise ValueError(
             f"Ungültiger Status: {status}"
         )
@@ -404,12 +344,7 @@ def update_item_status(item_id, status):
 # ============================================================
 
 def delete_item(item_id):
-    """
-    Löscht ein Fundstück anhand seiner ID.
-
-    Gibt True zurück, wenn tatsächlich ein Datensatz
-    gelöscht wurde.
-    """
+    """Löscht ein Fundstück."""
 
     connection = get_connection()
 
@@ -437,101 +372,58 @@ def delete_item(item_id):
 # ============================================================
 
 def get_statistics():
-    """
-    Erstellt Statistiken für das Fundbüro.
-
-    Rückgabe:
-        {
-            "total": ...,
-            "available": ...,
-            "collected": ...,
-            "bottles": ...,
-            "hoodies": ...
-        }
-    """
+    """Erstellt Statistiken für das Fundbüro."""
 
     connection = get_connection()
 
     try:
         cursor = connection.cursor()
 
-        # ----------------------------------------------------
-        # Gesamtzahl
-        # ----------------------------------------------------
-
         cursor.execute(
             """
-            SELECT COUNT(*)
+            SELECT
+                COUNT(*) AS total,
+                SUM(
+                    CASE
+                        WHEN status = 'Verfügbar'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS available,
+                SUM(
+                    CASE
+                        WHEN status = 'Abgeholt'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS collected,
+                SUM(
+                    CASE
+                        WHEN kategorie = 'Trinkflasche'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS bottles,
+                SUM(
+                    CASE
+                        WHEN kategorie = 'Hoodie'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS hoodies
             FROM fundstuecke
             """
         )
 
-        total = cursor.fetchone()[0]
-
-        # ----------------------------------------------------
-        # Verfügbare Fundstücke
-        # ----------------------------------------------------
-
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM fundstuecke
-            WHERE status = 'Verfügbar'
-            """
-        )
-
-        available = cursor.fetchone()[0]
-
-        # ----------------------------------------------------
-        # Abgeholte Fundstücke
-        # ----------------------------------------------------
-
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM fundstuecke
-            WHERE status = 'Abgeholt'
-            """
-        )
-
-        collected = cursor.fetchone()[0]
-
-        # ----------------------------------------------------
-        # Trinkflaschen
-        # ----------------------------------------------------
-
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM fundstuecke
-            WHERE kategorie = 'Trinkflasche'
-            """
-        )
-
-        bottles = cursor.fetchone()[0]
-
-        # ----------------------------------------------------
-        # Hoodies
-        # ----------------------------------------------------
-
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM fundstuecke
-            WHERE kategorie = 'Hoodie'
-            """
-        )
-
-        hoodies = cursor.fetchone()[0]
+        row = cursor.fetchone()
 
         return {
-            "total": total,
-            "available": available,
-            "collected": collected,
-            "bottles": bottles,
-            "hoodies": hoodies,
+            "total": row["total"] or 0,
+            "available": row["available"] or 0,
+            "collected": row["collected"] or 0,
+            "bottles": row["bottles"] or 0,
+            "hoodies": row["hoodies"] or 0,
         }
 
     finally:
         connection.close()
-```
