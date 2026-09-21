@@ -1,4 +1,3 @@
-```python
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -385,4 +384,3 @@ def get_statistics():
 
     finally:
         connection.close()
-```
