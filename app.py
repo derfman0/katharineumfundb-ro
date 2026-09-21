@@ -435,7 +435,6 @@ if page == "📷 Fundstück erfassen":
                         beschreibung=description,
                         bildpfad=str(image_path),
                         ki_konfidenz=float(ai_confidence),
-                        status = "Verfügbar",
                     )
 
                     st.success(
